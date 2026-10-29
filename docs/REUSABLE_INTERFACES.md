@@ -122,7 +122,7 @@ screen.find(pattern, exact=False)                # TextNode 或 None
 
 `bounds` 为 `(left, top, right, bottom)`，`TextNode.center` 为中心。`find` 默认在规范化文案上使用正则，`exact=True` 则比较完整规范化文字。它只返回第一个匹配；需要“最右侧搜索按钮”等规则时，应筛选 `screen.nodes` 后显式排序。
 
-读屏优先前台控件；控件不足或要求 `force_ocr` 时使用本地 OCR，黑屏无法识别时回查可读控件并标记遮挡。OCR 引擎按工作区上下文隔离。推理后端由环境变量 `MIAO_OCR_DEVICE`（`auto`/`cpu`/`cuda`，默认 `auto`）结合 `onnxruntime.get_available_providers()` 决定：CUDA 执行器可用才启用，强制 `cuda` 但缺失时告警回退 CPU；选择逻辑收敛在 `resolve_ocr_backend`，引擎参数由 `_ocr_engine_params` 组装，二者不导入 rapidocr/onnxruntime，可独立单测。`enrich_regions` 只处理当前 `last_screen` 对应原帧中的像素区域，回映裁剪偏移，不另取一帧；返回的是新观察对象，调用者不要假定对象身份不变。切换画面后须重新读取，不能保留坐标等待稍后点击。
+读屏优先前台控件；控件不足或要求 `force_ocr` 时使用本地 OCR，黑屏无法识别时回查可读控件并标记遮挡。OCR 引擎按工作区上下文与引擎世代隔离。推理后端优先读环境变量 `MIAO_OCR_DEVICE`，否则读 `preferences.load_preferences()['ocr_device']`（`auto`/`cpu`/`cuda`，默认 `auto`），结合 `onnxruntime.get_available_providers()` 决定：CUDA 执行器可用才启用，强制 `cuda` 但缺失时告警回退 CPU；选择逻辑收敛在 `resolve_ocr_backend`，引擎参数由 `_ocr_engine_params` 组装，二者不导入 rapidocr/onnxruntime，可独立单测。`enrich_regions` 只处理当前 `last_screen` 对应原帧中的像素区域，回映裁剪偏移，不另取一帧；返回的是新观察对象，调用者不要假定对象身份不变。切换画面后须重新读取，不能保留坐标等待稍后点击。
 
 ## 4. 屏幕、裁剪与缩放
 
@@ -354,7 +354,7 @@ hub.change_plugin(action, {'app': ..., 'activity': ..., 'source_commit': ...}, o
 hub.open_activity_folder(origin)                  # Windows 打开固定安装目录，返回路径字符串
 ```
 
-产品默认使用官方 `main` 源码。目录先解析提交与树，只静态读取 manifest 和兼容声明，不执行远端 Python；源码按固定提交从官方地址获取，核对 Git blob 摘要、长度、路径及数量。官方下载统一由 `networking.official_opener` 构建 opener：环境变量 `MIAO_DOWNLOAD_PROXY` 未设置时沿用系统与 `HTTPS_PROXY` 代理，设为 `http://host:port`（可省略协议头）时仅官方下载走该代理，设为 `off` 时强制直连；仅接受带端口的 HTTP/HTTPS 代理，凭据不写入日志，本机测试源 `127.0.0.1` 仍用 `ProxyHandler({})` 直连，不读取该变量。每个目录项有 `source='github-source'`、`source_ref`、`source_commit`、短 `revision`、合成版本 `0.0.0+git.<revision>` 和兼容信息；客户端安装/更新传已展示的完整提交，目录变化时拒绝静默改装。
+产品默认使用官方 `main` 源码。目录先解析提交与树，只静态读取 manifest 和兼容声明，不执行远端 Python；源码按固定提交从官方地址获取，核对 Git blob 摘要、长度、路径及数量。官方下载统一由 `networking.official_opener` 构建 opener，代理来源优先级为：显式入参 > 环境变量 `MIAO_DOWNLOAD_PROXY` > `preferences.load_preferences()['download_proxy']` > 系统与 `HTTPS_PROXY` 代理；取值为 `http://host:port`（可省略协议头）时仅官方下载走该代理，`off` 强制直连，空值沿用系统代理。仅接受带端口的 HTTP/HTTPS 代理，凭据不写入日志，本机测试源 `127.0.0.1` 仍用 `ProxyHandler({})` 直连，不读取偏好与环境变量。每个目录项有 `source='github-source'`、`source_ref`、`source_commit`、短 `revision`、合成版本 `0.0.0+git.<revision>` 和兼容信息；客户端安装/更新传已展示的完整提交，目录变化时拒绝静默改装。
 
 新活动或修改过的 manifest 在活动目录提供 `compat.json`，例如 `{"schema": 1, "framework_api": 1, "python": "3.13"}`。少量已审阅的旧 manifest 使用明确摘要白名单兼容，不能借此推断任意新活动兼容。目录中的 `warnings` 报告无效声明；`installed_source_commit`、`update_available` 和 `compatible` 用于界面展示。
 
@@ -367,6 +367,8 @@ hub.open_activity_folder(origin)                  # Windows 打开固定安装�
 `activities_dir()` 优先使用显式 `MIAO_ACTIVITIES_DIR`，不可写则报错；否则便携版使用 exe 旁的 `activities/`，源码使用仓库根的 `activities/`。设置 `MIAO_DATA_DIR` 会同时将活动隔离到该根下，避免测试读写正式活动。默认位置不可写时回退到私人数据根的 `activities/`。新目录不存在时复制旧 `plugins/`，或只读便携目录内的预装活动；保留源文件，不覆盖已有活动根。日记录和设备信息仍由 `data_dir()` 管理，不写入活动源码目录。
 
 默认 `Registry()` 合并源码资源与 `activities_dir()/apps`，插件应用目录按模块名覆盖对应内置应用，避免同一 ID 重复注册。自定义 `Registry(app_dir)` 默认只发现该目录；需加载外部包时显式传 `plugin_dir`。框架空包的 `has_activities` 为 false，`load_config()` 返回通用界面配置，但不能据此执行默认应用；执行前必须安装、选择真实活动。
+
+`GET/POST /api/preferences` 读写控制台级偏好 `{download_proxy, ocr_device}`，保存在 `data_dir()/preferences.json`（原子替换、未知字段忽略、损坏文件回退默认值）；POST 必须通过现有令牌、Host 与 Origin 校验，非法代理或后端返回 400，保存后重置 OCR 引擎世代，响应附带 `ocr_providers` 与 `cuda_available` 供界面提示。
 
 `POST /api/plugins/open-folder` 以空 JSON 对象请求，必须通过现有令牌、Host 与 Origin 校验。服务只打开已解析的 `manager.root`，忽略客户端路径；响应 `{ok: true, path: ...}`。非 Windows 或无法打开时返回可读错误，活动中心保留实际路径供手动访问。
 

@@ -47,8 +47,21 @@ def normalize_proxy(raw):
 
 
 def resolve_proxies(value=_UNSET):
-    """Return explicit proxy mappings, {} for direct, or None for defaults."""
-    raw = os.environ.get(PROXY_ENV) if value is _UNSET else value
+    """Return explicit proxy mappings, {} for direct, or None for defaults.
+
+    Priority: explicit call argument, then the MIAO_DOWNLOAD_PROXY env var
+    (non-interactive override), then the saved console preference, then the
+    system/HTTPS_PROXY defaults.
+    """
+    if value is not _UNSET:
+        raw = value
+    else:
+        env_raw = os.environ.get(PROXY_ENV)
+        if env_raw is not None:
+            raw = env_raw
+        else:
+            from backend.core.preferences import load_preferences
+            raw = load_preferences().get('download_proxy') or None
     if raw is None:
         return None
     return normalize_proxy(raw)
@@ -60,5 +73,5 @@ def official_opener(redirect_handler):
     if proxies is None:
         return build_opener(redirect_handler)
     if not proxies:
-        logger.info('活动下载按 %s=off 强制直连，不使用系统代理', PROXY_ENV)
+        logger.info('活动下载强制直连，不使用系统代理')
     return build_opener(ProxyHandler(proxies), redirect_handler)
