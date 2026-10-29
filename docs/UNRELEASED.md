@@ -5,3 +5,5 @@
 维护者构建发布时在副本中汇总并审阅，已收录条目从副本清空，后续贡献继续追加。
 
 ## 待发布
+
+* 【新增】支持通过环境变量 MIAO_OCR_DEVICE（auto/cpu/cuda）选择本地 OCR 推理后端，检测到 CUDA 执行器自动启用，强制 cuda 但缺少 onnxruntime-gpu 时告警并回退 CPU
