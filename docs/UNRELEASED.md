@@ -6,4 +6,4 @@
 
 ## 待发布
 
-* 【新增】支持通过环境变量 MIAOTASK_OCR_DEVICE（auto/cpu/cuda）选择本地 OCR 推理后端，检测到 CUDA 执行器自动启用，强制 cuda 但缺少 onnxruntime-gpu 时告警并回退 CPU
+* 【新增】支持通过环境变量 MIAO_OCR_DEVICE（auto/cpu/cuda）选择本地 OCR 推理后端，检测到 CUDA 执行器自动启用，强制 cuda 但缺少 onnxruntime-gpu 时告警并回退 CPU

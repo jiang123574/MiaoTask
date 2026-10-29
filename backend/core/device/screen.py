@@ -16,12 +16,12 @@ import threading
 logger = logging.getLogger(__name__)
 
 # auto：装了带 CUDA 的 onnxruntime-gpu 才启用；cpu/cuda 可显式指定。
-OCR_DEVICE_ENV = 'MIAOTASK_OCR_DEVICE'
+OCR_DEVICE_ENV = 'MIAO_OCR_DEVICE'
 _OCR_BACKENDS = ('auto', 'cpu', 'cuda')
 
 
 def resolve_ocr_backend(preference, providers):
-    """Map the MIAOTASK_OCR_DEVICE preference and available EPs to a backend.
+    """Map the MIAO_OCR_DEVICE preference and available EPs to a backend.
 
     Returns ``(backend, note)`` where backend is ``'cpu'`` or ``'cuda'`` and
     note is ``None`` or ``'cuda-unavailable'`` when a forced CUDA request has
