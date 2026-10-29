@@ -71,6 +71,14 @@
             <div class="settings-panel-heading"><div><h3>高级选项</h3><p>跨应用访问、页面识别与特殊入口方式。</p></div></div>
             <div class="settings-switch"><label><input type="checkbox" id="cross-app" checked><span>完成跨应用跳转并返回<small>返回失败时有限尝试恢复所选应用实例</small></span></label></div>
             <div class="settings-switch"><label><input type="checkbox" id="ocr" checked><span>页面不可读时使用本地 OCR<small>手机截图在电脑本地识别</small></span></label></div>
+            <div class="advanced-network">
+              <label class="field-label" for="ocr-device">OCR 推理后端</label>
+              <select id="ocr-device"><option value="auto">自动（检测到 CUDA 用 GPU，否则 CPU）</option><option value="cpu">强制 CPU</option><option value="cuda">强制 CUDA（需 NVIDIA 显卡）</option></select>
+              <p class="field-hint" id="ocr-device-hint">保留下次 OCR 重建引擎时生效；自动模式默认 CPU。</p>
+              <label class="field-label" for="download-proxy">活动下载代理</label>
+              <input type="text" id="download-proxy" autocomplete="off" spellcheck="false" placeholder="留空沿用系统代理；http://127.0.0.1:7890；off 强制直连">
+              <p class="field-hint">仅用于活动中心访问 GitHub 下载活动，不影响设备连接。</p>
+            </div>
             <div class="advanced-entry"><span class="field-label">特殊入口方式</span><label class="radio"><input type="radio" name="mode" value="current">从手机当前页面开始</label><p class="field-hint">仅在手机已打开所选实例的活动页时使用；默认自动进入更适合日常执行。</p></div>
           </section>
           <div class="settings-save" id="settings-save" hidden><span>关闭保留本页修改，下次开始时使用</span><button type="button" class="button settings-apply" id="save-settings">应用设置</button></div>            </div>

@@ -8,3 +8,4 @@
 
 * 【新增】支持通过环境变量 MIAO_OCR_DEVICE（auto/cpu/cuda）选择本地 OCR 推理后端，检测到 CUDA 执行器自动启用，强制 cuda 但缺少 onnxruntime-gpu 时告警并回退 CPU
 * 【新增】活动中心下载支持环境变量 MIAO_DOWNLOAD_PROXY 指定 HTTP/HTTPS 代理或填 off 强制直连，默认仍沿用系统代理
+* 【新增】公共设置-高级选项支持在网页直接配置活动下载代理与 OCR 推理后端（自动/CPU/CUDA），保存到本机用户数据并对下次下载与识别热生效；对应环境变量仍可覆盖

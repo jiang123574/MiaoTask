@@ -53,12 +53,36 @@ def _ocr_engine_params(backend):
     return params
 
 
+def preferred_ocr_device():
+    """Env var wins; otherwise the console-wide saved preference."""
+    explicit = os.environ.get(OCR_DEVICE_ENV)
+    if explicit is not None:
+        return explicit
+    try:
+        from backend.core.preferences import load_preferences
+        return load_preferences().get('ocr_device', 'auto')
+    except Exception:
+        return 'auto'
+
+
+_engine_generation = 0
+
+
+def reset_ocr_engines():
+    """Drop cached engines and bump generation so readers rebuild lazily."""
+    global _engine_generation
+    _engine_generation += 1
+    _scoped_ocr_engine.cache_clear()
+
+
 def local_ocr_engine():
-    return _scoped_ocr_engine(workspace_scope.get() or ('thread', threading.get_ident()))
+    scope = workspace_scope.get() or ('thread', threading.get_ident())
+    return _scoped_ocr_engine((_engine_generation, scope))
 
 
-@lru_cache(maxsize=8)
-def _scoped_ocr_engine(scope):
+@lru_cache(maxsize=16)
+def _scoped_ocr_engine(scope_key):
+    generation, scope = scope_key
     try:
         from rapidocr import RapidOCR
     except ImportError as exc:
@@ -69,10 +93,10 @@ def _scoped_ocr_engine(scope):
         providers = onnxruntime.get_available_providers()
     except ImportError:
         pass
-    backend, note = resolve_ocr_backend(os.environ.get(OCR_DEVICE_ENV), providers)
+    backend, note = resolve_ocr_backend(preferred_ocr_device(), providers)
     if note == 'cuda-unavailable':
-        logger.warning('已通过 %s=cuda 请求 GPU 识别，但当前 onnxruntime 不含 CUDAExecutionProvider；'
-                       '需安装与本机 CUDA/cuDNN 版本匹配的 onnxruntime-gpu，已回退 CPU', OCR_DEVICE_ENV)
+        logger.warning('已请求 GPU 识别（cuda），但当前 onnxruntime 不含 CUDAExecutionProvider；'
+                       '需安装与本机 CUDA/cuDNN 版本匹配的 onnxruntime-gpu，已回退 CPU')
     engine = RapidOCR(params=_ocr_engine_params(backend))
     # Models load lazily on the first frame, so the active session cannot be
     # probed here; the chosen flag plus available EPs already determine it.
@@ -118,6 +142,9 @@ class ScreenReader:
         self.ocr_enabled = ocr
         self.on_image = on_image
         self._engine = None
+        # Align with the current generation; a None engine still loads lazily,
+        # while an injected engine stays valid until reset_ocr_engines().
+        self._engine_generation = _engine_generation
         self._ocr_notice = False
         self._size = None
         self.last_image = None
@@ -159,8 +186,9 @@ class ScreenReader:
         return nodes
 
     def _ocr_tile(self, image):
-        if self._engine is None:
+        if self._engine is None or self._engine_generation != _engine_generation:
             self._engine = local_ocr_engine()
+            self._engine_generation = _engine_generation
         import numpy as np
         prepared = self.image_processor.prepare(image)
         image = prepared.image
