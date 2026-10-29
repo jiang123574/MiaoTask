@@ -6,9 +6,10 @@ import re
 import sys
 import time
 from urllib.parse import quote, unquote, urlparse
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, Request
 import zipfile
 
+from backend.core.plugins.networking import official_opener
 from backend.core.plugins.contracts import (ALLOWED_SUFFIXES, CATALOG_URL, FRAMEWORK_API,
     LEGACY_COMPATIBLE_MANIFESTS, MAX_ARCHIVE_BYTES, MAX_CATALOG_BYTES, MAX_EXPANDED_BYTES,
     MAX_FILES, MAX_SOURCE_FILE_BYTES, MAX_TREE_BYTES, OFFICIAL_REPOSITORY,
@@ -61,7 +62,7 @@ def download_source(url, maximum):
     request = Request(url, headers={'User-Agent': 'MiaoTask-GitHub-Activities',
                       'Accept': 'application/vnd.github+json' if urlparse(url).hostname == 'api.github.com' else 'application/octet-stream',
                       'X-GitHub-Api-Version': '2022-11-28'})
-    with build_opener(_NoRedirect()).open(request, timeout=15) as response:
+    with official_opener(_NoRedirect()).open(request, timeout=15) as response:
         source_url(response.geturl())
         content, size, deadline = [], 0, time.monotonic() + 30
         reader = getattr(response, 'read1', response.read)

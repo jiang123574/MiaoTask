@@ -26,6 +26,7 @@ import zipfile
 from backend.core.plugins.contracts import (ALLOWED_SUFFIXES, CATALOG_URL, FRAMEWORK_API,
     MAX_ARCHIVE_BYTES, MAX_CATALOG_BYTES, MAX_EXPANDED_BYTES, MAX_FILES,
     OFFICIAL_REPOSITORY, PACKAGE_SCHEMA, module_id, package_version)
+from backend.core.plugins.networking import official_opener
 from backend.core.runtime import activities_dir
 
 _LOCK = threading.RLock()
@@ -108,7 +109,7 @@ def _bounded_read(response, maximum):
 def _download(url, maximum):
     official_asset_url(url)
     request = Request(url, headers={'User-Agent': 'MiaoTask-Activity-Installer', 'Accept': 'application/octet-stream'})
-    with build_opener(_OfficialRedirect()).open(request, timeout=20) as response:
+    with official_opener(_OfficialRedirect()).open(request, timeout=20) as response:
         _official_redirect_url(response.geturl())
         return _bounded_read(response, maximum)
 

@@ -333,7 +333,7 @@ HTTP 为 `GET /api/rankings?group=activity&period=today&metric=completed`，设�
 
 ## 10. 官方活动源码、安装门与流水线
 
-实现：[runtime.py](../backend/core/runtime.py)、[repository.py](../backend/core/plugins/repository.py)、[contracts.py](../backend/core/plugins/contracts.py)、[manager.py](../backend/core/plugins/manager.py)、[activity_hub.py](../backend/core/service/activity_hub.py)、[pipeline.py](../backend/core/service/pipeline.py)、[bundle_policy.py](../scripts/bundle_policy.py)。
+实现：[runtime.py](../backend/core/runtime.py)、[networking.py](../backend/core/plugins/networking.py)、[repository.py](../backend/core/plugins/repository.py)、[contracts.py](../backend/core/plugins/contracts.py)、[manager.py](../backend/core/plugins/manager.py)、[activity_hub.py](../backend/core/service/activity_hub.py)、[pipeline.py](../backend/core/service/pipeline.py)、[bundle_policy.py](../scripts/bundle_policy.py)。
 
 ```text
 GitHubSourceProvider(fetch=None)
@@ -354,7 +354,7 @@ hub.change_plugin(action, {'app': ..., 'activity': ..., 'source_commit': ...}, o
 hub.open_activity_folder(origin)                  # Windows 打开固定安装目录，返回路径字符串
 ```
 
-产品默认使用官方 `main` 源码。目录先解析提交与树，只静态读取 manifest 和兼容声明，不执行远端 Python；源码按固定提交从官方地址获取，核对 Git blob 摘要、长度、路径及数量。每个目录项有 `source='github-source'`、`source_ref`、`source_commit`、短 `revision`、合成版本 `0.0.0+git.<revision>` 和兼容信息；客户端安装/更新传已展示的完整提交，目录变化时拒绝静默改装。
+产品默认使用官方 `main` 源码。目录先解析提交与树，只静态读取 manifest 和兼容声明，不执行远端 Python；源码按固定提交从官方地址获取，核对 Git blob 摘要、长度、路径及数量。官方下载统一由 `networking.official_opener` 构建 opener：环境变量 `MIAO_DOWNLOAD_PROXY` 未设置时沿用系统与 `HTTPS_PROXY` 代理，设为 `http://host:port`（可省略协议头）时仅官方下载走该代理，设为 `off` 时强制直连；仅接受带端口的 HTTP/HTTPS 代理，凭据不写入日志，本机测试源 `127.0.0.1` 仍用 `ProxyHandler({})` 直连，不读取该变量。每个目录项有 `source='github-source'`、`source_ref`、`source_commit`、短 `revision`、合成版本 `0.0.0+git.<revision>` 和兼容信息；客户端安装/更新传已展示的完整提交，目录变化时拒绝静默改装。
 
 新活动或修改过的 manifest 在活动目录提供 `compat.json`，例如 `{"schema": 1, "framework_api": 1, "python": "3.13"}`。少量已审阅的旧 manifest 使用明确摘要白名单兼容，不能借此推断任意新活动兼容。目录中的 `warnings` 报告无效声明；`installed_source_commit`、`update_available` 和 `compatible` 用于界面展示。
 
