@@ -122,7 +122,7 @@ screen.find(pattern, exact=False)                # TextNode 或 None
 
 `bounds` 为 `(left, top, right, bottom)`，`TextNode.center` 为中心。`find` 默认在规范化文案上使用正则，`exact=True` 则比较完整规范化文字。它只返回第一个匹配；需要“最右侧搜索按钮”等规则时，应筛选 `screen.nodes` 后显式排序。
 
-读屏优先前台控件；控件不足或要求 `force_ocr` 时使用本地 OCR，黑屏无法识别时回查可读控件并标记遮挡。OCR 引擎按工作区上下文隔离。`enrich_regions` 只处理当前 `last_screen` 对应原帧中的像素区域，回映裁剪偏移，不另取一帧；返回的是新观察对象，调用者不要假定对象身份不变。切换画面后须重新读取，不能保留坐标等待稍后点击。
+读屏优先前台控件；控件不足或要求 `force_ocr` 时使用本地 OCR，黑屏无法识别时回查可读控件并标记遮挡。OCR 引擎按工作区上下文隔离。推理后端由环境变量 `MIAOTASK_OCR_DEVICE`（`auto`/`cpu`/`cuda`，默认 `auto`）结合 `onnxruntime.get_available_providers()` 决定：CUDA 执行器可用才启用，强制 `cuda` 但缺失时告警回退 CPU；选择逻辑收敛在 `resolve_ocr_backend`，引擎参数由 `_ocr_engine_params` 组装，二者不导入 rapidocr/onnxruntime，可独立单测。`enrich_regions` 只处理当前 `last_screen` 对应原帧中的像素区域，回映裁剪偏移，不另取一帧；返回的是新观察对象，调用者不要假定对象身份不变。切换画面后须重新读取，不能保留坐标等待稍后点击。
 
 ## 4. 屏幕、裁剪与缩放
 

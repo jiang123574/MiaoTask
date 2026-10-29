@@ -15,6 +15,43 @@ import threading
 
 logger = logging.getLogger(__name__)
 
+# auto：装了带 CUDA 的 onnxruntime-gpu 才启用；cpu/cuda 可显式指定。
+OCR_DEVICE_ENV = 'MIAOTASK_OCR_DEVICE'
+_OCR_BACKENDS = ('auto', 'cpu', 'cuda')
+
+
+def resolve_ocr_backend(preference, providers):
+    """Map the MIAOTASK_OCR_DEVICE preference and available EPs to a backend.
+
+    Returns ``(backend, note)`` where backend is ``'cpu'`` or ``'cuda'`` and
+    note is ``None`` or ``'cuda-unavailable'`` when a forced CUDA request has
+    to fall back because CUDAExecutionProvider is missing.
+    """
+    requested = (preference or 'auto').strip().lower()
+    if requested not in _OCR_BACKENDS:
+        logger.warning('环境变量 %s=%r 无法识别，可选 %s，按 auto 处理',
+                       OCR_DEVICE_ENV, preference, '/'.join(_OCR_BACKENDS))
+        requested = 'auto'
+    cuda_ready = 'CUDAExecutionProvider' in (providers or ())
+    if requested == 'cpu':
+        return 'cpu', None
+    if cuda_ready:
+        return 'cuda', None
+    if requested == 'cuda':
+        return 'cpu', 'cuda-unavailable'
+    return 'cpu', None
+
+
+def _ocr_engine_params(backend):
+    params = {
+        'EngineConfig.onnxruntime.intra_op_num_threads': min(4, os.cpu_count() or 2),
+        'EngineConfig.onnxruntime.inter_op_num_threads': 1,
+        'Global.log_level': 'warning',
+    }
+    if backend == 'cuda':
+        params['EngineConfig.onnxruntime.use_cuda'] = True
+    return params
+
 
 def local_ocr_engine():
     return _scoped_ocr_engine(workspace_scope.get() or ('thread', threading.get_ident()))
@@ -26,11 +63,21 @@ def _scoped_ocr_engine(scope):
         from rapidocr import RapidOCR
     except ImportError as exc:
         raise RuntimeError('页面未提供可读控件，请先运行 pip install -r requirements.txt 安装本地 OCR') from exc
-    engine = RapidOCR(params={
-        'EngineConfig.onnxruntime.intra_op_num_threads': min(4, os.cpu_count() or 2),
-        'EngineConfig.onnxruntime.inter_op_num_threads': 1,
-        'Global.log_level': 'warning',
-    })
+    providers = ()
+    try:
+        import onnxruntime
+        providers = onnxruntime.get_available_providers()
+    except ImportError:
+        pass
+    backend, note = resolve_ocr_backend(os.environ.get(OCR_DEVICE_ENV), providers)
+    if note == 'cuda-unavailable':
+        logger.warning('已通过 %s=cuda 请求 GPU 识别，但当前 onnxruntime 不含 CUDAExecutionProvider；'
+                       '需安装与本机 CUDA/cuDNN 版本匹配的 onnxruntime-gpu，已回退 CPU', OCR_DEVICE_ENV)
+    engine = RapidOCR(params=_ocr_engine_params(backend))
+    # Models load lazily on the first frame, so the active session cannot be
+    # probed here; the chosen flag plus available EPs already determine it.
+    active_eps = ','.join(providers) or 'CPUExecutionProvider'
+    logger.info('本地 OCR 推理后端：%s（onnxruntime 可用执行器：%s）', backend, active_eps)
     # The locked RapidOCR version exposes this recognizer protocol. If a source
     # install uses an incompatible release, retain its standard OCR path.
     try:
