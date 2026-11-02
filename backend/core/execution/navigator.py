@@ -120,7 +120,7 @@ class Navigator:
             if (screen.package == package and
                     (self.launch_screen(screen) or (launch_pending and not home_visible
                      and self.control.now() - last_action < self.config['page_timeout']))):
-                self.update(message='等待应用启动完成，准备点击首页领淘金币')
+                self.update(message='等待应用启动完成，准备进入首页活动入口')
                 self.control.wait(.35)
                 screen = self.read(force_ocr=bool(self.config['ocr']))
                 continue
@@ -133,7 +133,7 @@ class Navigator:
                     # A homepage overlay can expose the covered search/icon
                     # controls in its accessibility tree. Dismiss it before
                     # using those background controls.
-                    if screen.find(r'^关闭按钮$|^关闭弹窗$'):
+                    if screen.find(r'^关闭按钮$|^关闭弹窗$|^关闭$'):
                         if not step_back():
                             break
                         continue

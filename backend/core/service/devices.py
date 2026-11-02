@@ -11,7 +11,7 @@ from backend.core.service.activity_hub import ActivityCatalogHub
 class DeviceHub(ActivityCatalogHub):
     limit = 8
 
-    def __init__(self, config=None, registry=None, app=None, activity=None):
+    def __init__(self, config=None, registry=None, app=None, activity=None, persist_preferences=False):
         self.lock = threading.RLock()
         self.controllers = {}
         self.leases = {}
@@ -19,7 +19,8 @@ class DeviceHub(ActivityCatalogHub):
         self._init_activity_catalog()
         from backend.core.storage.workspaces import WorkspaceStore
         self.workspace_store = WorkspaceStore()
-        self.defaults = dict(config=config, registry=registry, app=app, activity=activity)
+        self.defaults = dict(config=config, registry=registry, app=app, activity=activity,
+                             persist_preferences=persist_preferences)
         self.add('设备 1', key='default')
         self._restore_workspaces()
 
