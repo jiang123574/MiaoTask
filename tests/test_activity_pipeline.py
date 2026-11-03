@@ -1,4 +1,5 @@
 """Device-free integration contracts for sequential activities on each device."""
+import tests.support  # 隔离本机下载的活动包
 from contextlib import ExitStack, nullcontext
 from dataclasses import asdict
 import json

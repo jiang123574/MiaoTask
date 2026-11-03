@@ -1,4 +1,5 @@
 """Local activity tools are explicit and keep ordinary launch defaults intact."""
+import tests.support  # 隔离本机下载的活动包
 from contextlib import redirect_stderr
 import io
 import os

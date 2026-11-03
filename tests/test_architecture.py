@@ -1,4 +1,5 @@
 """Offline migration contracts. All devices, identifiers and screens are synthetic."""
+import tests.support  # 隔离本机下载的活动包
 import ast
 import copy
 from dataclasses import replace

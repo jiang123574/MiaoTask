@@ -1,4 +1,5 @@
 """Offline package integrity, namespace and independent activity lifecycle tests."""
+import tests.support  # 隔离本机下载的活动包
 import copy
 import hashlib
 import importlib
