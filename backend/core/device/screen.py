@@ -20,6 +20,54 @@ logger = logging.getLogger(__name__)
 OCR_DEVICE_ENV = 'MIAO_OCR_DEVICE'
 _OCR_BACKENDS = ('auto', 'cpu', 'cuda')
 
+# One recognizer serves every thread of one physical device: the preview, the
+# task worker and the browse observer share models instead of reloading them.
+_engine_generation = 0
+_DEFAULT_SCOPE = 'default'
+_engine_locks = {}
+_engine_locks_guard = threading.Lock()
+
+
+def device_ocr_scope(device):
+    """Key recognizers by physical device so USB/Wi-Fi aliases stay one model."""
+    for attr in ('identity_serial', 'serial'):
+        value = getattr(device, attr, None)
+        if isinstance(value, str) and value.strip():
+            return ('device', value.strip())
+    return ('device', id(device)) if device is not None else None
+
+
+def resolve_ocr_scope(scope=None):
+    """Explicit scope wins; otherwise the workspace, never a thread identity."""
+    if scope is not None:
+        return scope
+    return workspace_scope.get() or _DEFAULT_SCOPE
+
+
+def ocr_engine_lock(scope=None):
+    """Serialize inference per scope; different scopes still run in parallel."""
+    key = resolve_ocr_scope(scope)
+    with _engine_locks_guard:
+        lock = _engine_locks.get(key)
+        if lock is None:
+            lock = _engine_locks[key] = threading.RLock()
+        return lock
+
+
+def local_ocr_engine(scope=None):
+    key = resolve_ocr_scope(scope)
+    # lru_cache may call the builder twice for a concurrent miss; holding the
+    # scope lock keeps one model per device and prevents duplicate loading.
+    with ocr_engine_lock(key):
+        return _scoped_ocr_engine((_engine_generation, key))
+
+
+def reset_ocr_engines():
+    """Drop cached engines and bump generation so readers rebuild lazily."""
+    global _engine_generation
+    _engine_generation += 1
+    _scoped_ocr_engine.cache_clear()
+
 
 def resolve_ocr_backend(preference, providers):
     """Map the MIAO_OCR_DEVICE preference and available EPs to a backend.
@@ -83,55 +131,6 @@ def preferred_ocr_device():
         return load_preferences().get('ocr_device', 'auto')
     except Exception:
         return 'auto'
-
-
-_engine_generation = 0
-# One recognizer serves every thread of one physical device: the preview, the
-# task worker and the browse observer share models instead of reloading them.
-_DEFAULT_SCOPE = 'default'
-_engine_locks = {}
-_engine_locks_guard = threading.Lock()
-
-
-def device_ocr_scope(device):
-    """Key recognizers by physical device so USB/Wi-Fi aliases stay one model."""
-    for attr in ('identity_serial', 'serial'):
-        value = getattr(device, attr, None)
-        if isinstance(value, str) and value.strip():
-            return ('device', value.strip())
-    return ('device', id(device)) if device is not None else None
-
-
-def resolve_ocr_scope(scope=None):
-    """Explicit scope wins; otherwise the workspace, never a thread identity."""
-    if scope is not None:
-        return scope
-    return workspace_scope.get() or _DEFAULT_SCOPE
-
-
-def ocr_engine_lock(scope=None):
-    """Serialize inference per scope; different scopes still run in parallel."""
-    key = resolve_ocr_scope(scope)
-    with _engine_locks_guard:
-        lock = _engine_locks.get(key)
-        if lock is None:
-            lock = _engine_locks[key] = threading.RLock()
-        return lock
-
-
-def reset_ocr_engines():
-    """Drop cached engines and bump generation so readers rebuild lazily."""
-    global _engine_generation
-    _engine_generation += 1
-    _scoped_ocr_engine.cache_clear()
-
-
-def local_ocr_engine(scope=None):
-    key = resolve_ocr_scope(scope)
-    # lru_cache may call the builder twice for a concurrent miss; holding the
-    # scope lock keeps one model per device and prevents duplicate loading.
-    with ocr_engine_lock(key):
-        return _scoped_ocr_engine((_engine_generation, key))
 
 
 @lru_cache(maxsize=16)
@@ -353,8 +352,9 @@ class ScreenReader:
 class VisualObserver:
     """One in-flight frame, no device access or callbacks on the OCR thread.
 
-    The private reader owns its recognition cache/engine. Closing discards late
-    results; even a slow recognizer cannot send input or mutate the session.
+    The private reader owns its recognition cache but shares the owner device
+    recognizer. Closing discards late results; even a slow recognizer cannot
+    send input or mutate the session.
     """
     def __init__(self, reader):
         self.source = reader

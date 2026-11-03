@@ -334,6 +334,7 @@ class FreshFrameTests(unittest.TestCase):
             phone.screenshot(max_age=.15)
         self.assertEqual(phone._device.screenshot.call_count, 2)
 
+
 def recognized(texts):
     class Result:
         boxes = [((0, 0), (10, 0), (10, 5), (0, 5)) for _ in texts]
@@ -356,6 +357,11 @@ class RecognizerScopeTests(unittest.TestCase):
         worker.start()
         worker.join()
         self.assertEqual(seen, [reader.engine_scope])
+
+    def test_usb_and_wifi_aliases_share_the_physical_device_scope(self):
+        usb = Mock(serial='usb-1', identity_serial='R58M123456')
+        wifi = Mock(serial='192.168.1.7:5555', identity_serial='R58M123456')
+        self.assertEqual(ScreenReader(usb).engine_scope, ScreenReader(wifi).engine_scope)
 
     def test_browse_observer_recognizes_with_the_owner_device_scope(self):
         phone = Mock(serial='usb-1')
