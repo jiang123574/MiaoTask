@@ -88,3 +88,6 @@ try.py
 /backend/app/**/*.local.yaml
 /shared/tools/
 /shared/models/
+
+# Local assistant workspace notes (not part of the source tree)
+/.workbuddy/
