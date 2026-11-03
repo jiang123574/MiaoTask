@@ -86,6 +86,37 @@ def preferred_ocr_device():
 
 
 _engine_generation = 0
+# One recognizer serves every thread of one physical device: the preview, the
+# task worker and the browse observer share models instead of reloading them.
+_DEFAULT_SCOPE = 'default'
+_engine_locks = {}
+_engine_locks_guard = threading.Lock()
+
+
+def device_ocr_scope(device):
+    """Key recognizers by physical device so USB/Wi-Fi aliases stay one model."""
+    for attr in ('identity_serial', 'serial'):
+        value = getattr(device, attr, None)
+        if isinstance(value, str) and value.strip():
+            return ('device', value.strip())
+    return ('device', id(device)) if device is not None else None
+
+
+def resolve_ocr_scope(scope=None):
+    """Explicit scope wins; otherwise the workspace, never a thread identity."""
+    if scope is not None:
+        return scope
+    return workspace_scope.get() or _DEFAULT_SCOPE
+
+
+def ocr_engine_lock(scope=None):
+    """Serialize inference per scope; different scopes still run in parallel."""
+    key = resolve_ocr_scope(scope)
+    with _engine_locks_guard:
+        lock = _engine_locks.get(key)
+        if lock is None:
+            lock = _engine_locks[key] = threading.RLock()
+        return lock
 
 
 def reset_ocr_engines():
@@ -95,9 +126,12 @@ def reset_ocr_engines():
     _scoped_ocr_engine.cache_clear()
 
 
-def local_ocr_engine():
-    scope = workspace_scope.get() or ('thread', threading.get_ident())
-    return _scoped_ocr_engine((_engine_generation, scope))
+def local_ocr_engine(scope=None):
+    key = resolve_ocr_scope(scope)
+    # lru_cache may call the builder twice for a concurrent miss; holding the
+    # scope lock keeps one model per device and prevents duplicate loading.
+    with ocr_engine_lock(key):
+        return _scoped_ocr_engine((_engine_generation, key))
 
 
 @lru_cache(maxsize=16)
@@ -160,11 +194,15 @@ class Screen:
 
 
 class ScreenReader:
-    def __init__(self, device, ocr=True, on_image=None, image_processor=None):
+    def __init__(self, device, ocr=True, on_image=None, image_processor=None, engine_scope=None):
         self.device = device
         self.ocr_enabled = ocr
         self.on_image = on_image
         self._engine = None
+        # Recognizers follow the device, not the calling thread, so an observer
+        # thread reuses the models already loaded by the task worker.
+        self.engine_scope = resolve_ocr_scope(engine_scope if engine_scope is not None
+                                              else device_ocr_scope(device))
         # Align with the current generation; a None engine still loads lazily,
         # while an injected engine stays valid until reset_ocr_engines().
         self._engine_generation = _engine_generation
@@ -213,16 +251,21 @@ class ScreenReader:
         return nodes
 
     def _ocr_tile(self, image):
-        if self._engine is None or self._engine_generation != _engine_generation:
-            self._engine = local_ocr_engine()
-            self._engine_generation = _engine_generation
         import numpy as np
         prepared = self.image_processor.prepare(image)
         image = prepared.image
         # Limit image width to reduce CPU work, then map boxes back to the phone.
         scale = min(1.0, 1000 / image.width)
         resized = image.resize((round(image.width * scale), round(image.height * scale)))
-        result = self._engine(np.asarray(resized), use_cls=False)
+        frame = np.asarray(resized)
+        # The engine is shared per device, so only one inference runs at a time;
+        # this keeps rapidocr's internal state single-threaded while frames of
+        # different devices still recognize in parallel.
+        with ocr_engine_lock(self.engine_scope):
+            if self._engine is None or self._engine_generation != _engine_generation:
+                self._engine = local_ocr_engine(self.engine_scope)
+                self._engine_generation = _engine_generation
+            result = self._engine(frame, use_cls=False)
         results = zip(result.boxes, result.txts, result.scores) if result.boxes is not None else []
         nodes = []
         for box, text, confidence in results:
@@ -315,7 +358,10 @@ class VisualObserver:
     """
     def __init__(self, reader):
         self.source = reader
-        self.reader = ScreenReader(None, image_processor=reader.image_processor)
+        # Same device scope as the owner: the worker never reloads OCR models,
+        # and the frame cache below stays private to this observer.
+        self.reader = ScreenReader(None, image_processor=reader.image_processor,
+                                   engine_scope=reader.engine_scope)
         self.requests = queue.Queue(maxsize=1)
         self.results = queue.Queue(maxsize=1)
         self.closed = threading.Event()
