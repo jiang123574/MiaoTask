@@ -1,4 +1,5 @@
 """Wireless transport regressions; all addresses and codes are synthetic."""
+import tests.support  # 隔离本机下载的活动包
 import json
 import subprocess
 import threading

@@ -1,3 +1,4 @@
+import tests.support  # 隔离本机下载的活动包
 from contextlib import nullcontext
 from pathlib import Path
 import tempfile

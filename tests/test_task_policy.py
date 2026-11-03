@@ -1,4 +1,5 @@
 """Synthetic queue decisions must survive restarts without operating stale rows."""
+import tests.support  # 隔离本机下载的活动包
 from dataclasses import replace
 import json
 from pathlib import Path

@@ -59,6 +59,12 @@ class NormalizeProxyTests(unittest.TestCase):
 
 
 class ResolveProxiesTests(unittest.TestCase):
+    def setUp(self):
+        # The saved console preference would otherwise answer for "unset".
+        preferences = patch('backend.core.preferences.load_preferences', return_value={})
+        self.addCleanup(preferences.stop)
+        preferences.start()
+
     def test_unset_returns_none_for_system_defaults(self):
         env = dict(os.environ)
         env.pop(PROXY_ENV, None)

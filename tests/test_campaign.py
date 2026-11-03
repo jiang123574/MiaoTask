@@ -1,3 +1,4 @@
+import tests.support  # 隔离本机下载的活动包
 import json
 from http.server import ThreadingHTTPServer
 import threading

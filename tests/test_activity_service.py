@@ -1,4 +1,5 @@
 """Loopback installation lifecycle, authentication and all-device update gate."""
+import tests.support  # 隔离本机下载的活动包
 import hashlib
 import importlib
 import json
