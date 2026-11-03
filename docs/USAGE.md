@@ -117,7 +117,7 @@ v0.1.4 发布 ZIP 预装淘宝五项活动与支付宝月月赚，更新可在�
 | `cuda` | 强制 GPU；当前环境没有 CUDA 执行器时打印告警并回退 CPU |
 | `cpu` | 强制 CPU，即使安装了 GPU 版运行时 |
 
-启用 CUDA 需要 NVIDIA 显卡，并自行卸载 `onnxruntime`、改装与本机 NVIDIA 驱动、CUDA 和 cuDNN 版本匹配的 `onnxruntime-gpu`；源码运行在启动命令前设置环境变量即可（Windows 命令行 `set MIAO_OCR_DEVICE=cuda`，或在系统环境变量中配置后重新启动）。启动日志会输出「本地 OCR 推理后端」及实际生效的执行器，可据此确认是否走了 CUDA。逐行文本识别是大量小张量推理，部分电脑上 GPU 不一定快于 CPU，建议先用一两个任务对比耗时，再决定是否长期开启。
+启用 CUDA 需要 NVIDIA 显卡，并自行卸载 `onnxruntime`、改装与本机 NVIDIA 驱动、CUDA 和 cuDNN 版本匹配的 `onnxruntime-gpu`。也可以直接安装自带运行库的 `pip install "onnxruntime-gpu[cuda,cudnn]"`，程序在启用 CUDA 时会自动预加载其中的 CUDA/cuDNN DLL，无需再手动配置 `PATH`；两种方式都以启动日志中的实际执行器为准。源码运行在启动命令前设置环境变量即可（Windows 命令行 `set MIAO_OCR_DEVICE=cuda`，PowerShell 使用 `$env:MIAO_OCR_DEVICE="cuda"`，或在系统环境变量中配置后重新启动）。启动日志会输出「本地 OCR 推理后端」及实际生效的执行器，可据此确认是否走了 CUDA。逐行文本识别是大量小张量推理，部分电脑上 GPU 不一定快于 CPU，建议先用一两个任务对比耗时，再决定是否长期开启。
 
 任务行的“执行 / 跳过”是队列选择，点击执行不会立即开始操作。先由识别结果给出默认选择，可实时调整尚未完成的任务；开始自动执行后按正常流程处理已选任务。正在进行的步骤先安全结束，下一次选择任务时应用调整；本轮已结束时需再次开始。右侧继续显示运行、完成或失败状态。已完成及必须人工处理的任务不能强制加入。
 

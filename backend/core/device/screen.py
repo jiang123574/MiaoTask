@@ -54,6 +54,25 @@ def _ocr_engine_params(backend):
     return params
 
 
+def _preload_cuda_dlls(onnxruntime_module):
+    """Load CUDA/cuDNN DLLs installed by ``onnxruntime-gpu[cuda,cudnn]``.
+
+    Returns True when the runtime exposes and accepts the preload call. Older
+    onnxruntime releases and system-wide CUDA installs stay on the normal DLL
+    search path, so a missing hook or a failed load is not fatal.
+    """
+    preload = getattr(onnxruntime_module, 'preload_dlls', None)
+    if preload is None:
+        return False
+    try:
+        preload()
+        return True
+    except Exception:
+        logger.warning('预加载 onnxruntime-gpu 附带的 CUDA/cuDNN 运行库失败，'
+                       '继续按系统 PATH 查找', exc_info=True)
+        return False
+
+
 def preferred_ocr_device():
     """Env var wins; otherwise the console-wide saved preference."""
     explicit = os.environ.get(OCR_DEVICE_ENV)
@@ -98,6 +117,9 @@ def _scoped_ocr_engine(scope_key):
     if note == 'cuda-unavailable':
         logger.warning('已请求 GPU 识别（cuda），但当前 onnxruntime 不含 CUDAExecutionProvider；'
                        '需安装与本机 CUDA/cuDNN 版本匹配的 onnxruntime-gpu，已回退 CPU')
+    if backend == 'cuda':
+        # pip 安装的 nvidia-* 运行库不在 Windows DLL 搜索路径中，先显式加载。
+        _preload_cuda_dlls(onnxruntime)
     engine = RapidOCR(params=_ocr_engine_params(backend))
     # Models load lazily on the first frame, so the active session cannot be
     # probed here; the chosen flag plus available EPs already determine it.

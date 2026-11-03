@@ -49,7 +49,9 @@ class ScopedOCRBackendTests(unittest.TestCase):
         engine = Mock()
         engine.text_det.session.session.get_providers.return_value = providers
         rapid = SimpleNamespace(RapidOCR=Mock(return_value=engine))
-        ort = SimpleNamespace(get_available_providers=Mock(return_value=list(providers)))
+        ort = SimpleNamespace(get_available_providers=Mock(return_value=list(providers)),
+                              preload_dlls=Mock())
+        self.ort = ort
         env = dict(os.environ)
         if env_value is None:
             env.pop(screen.OCR_DEVICE_ENV, None)
@@ -83,6 +85,40 @@ class ScopedOCRBackendTests(unittest.TestCase):
     def test_explicit_cpu_env_keeps_cpu_even_with_cuda_ep(self):
         params = self._wire(['CUDAExecutionProvider', 'CPUExecutionProvider'], 'cpu')
         self.assertNotIn('EngineConfig.onnxruntime.use_cuda', params)
+
+    def test_cuda_backend_preloads_bundled_cuda_dlls(self):
+        self._wire(['CUDAExecutionProvider', 'CPUExecutionProvider'], 'cuda')
+        self.ort.preload_dlls.assert_called_once_with()
+
+    def test_cpu_backend_skips_dll_preload(self):
+        self._wire(['CPUExecutionProvider'], 'cpu')
+        self.ort.preload_dlls.assert_not_called()
+
+    def test_missing_preload_api_still_builds_the_cuda_engine(self):
+        engine = Mock()
+        rapid = SimpleNamespace(RapidOCR=Mock(return_value=engine))
+        ort = SimpleNamespace(get_available_providers=Mock(
+            return_value=['CUDAExecutionProvider', 'CPUExecutionProvider']))
+        screen._scoped_ocr_engine.cache_clear()
+        with patch.dict(sys.modules, {'rapidocr': rapid, 'onnxruntime': ort}), \
+                patch.dict(os.environ, {screen.OCR_DEVICE_ENV: 'cuda'}, clear=True):
+            screen.local_ocr_engine()
+        self.assertIs(rapid.RapidOCR.call_args.kwargs['params'][
+                      'EngineConfig.onnxruntime.use_cuda'], True)
+
+    def test_preload_failure_falls_back_to_the_system_search_path(self):
+        engine = Mock()
+        rapid = SimpleNamespace(RapidOCR=Mock(return_value=engine))
+        ort = SimpleNamespace(get_available_providers=Mock(
+            return_value=['CUDAExecutionProvider', 'CPUExecutionProvider']),
+            preload_dlls=Mock(side_effect=OSError('missing dll')))
+        screen._scoped_ocr_engine.cache_clear()
+        with patch.dict(sys.modules, {'rapidocr': rapid, 'onnxruntime': ort}), \
+                patch.dict(os.environ, {screen.OCR_DEVICE_ENV: 'cuda'}, clear=True):
+            screen.local_ocr_engine()
+        ort.preload_dlls.assert_called_once_with()
+        self.assertIs(rapid.RapidOCR.call_args.kwargs['params'][
+                      'EngineConfig.onnxruntime.use_cuda'], True)
 
 
 if __name__ == '__main__':
