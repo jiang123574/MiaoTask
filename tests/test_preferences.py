@@ -10,6 +10,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 from urllib.error import HTTPError
+
+# Preload OpenCV: ``patch.dict(sys.modules, ...)`` restores the mapping and
+# would otherwise drop a module first imported inside the patched block.
+import cv2  # noqa: F401
 from urllib.request import Request, urlopen
 
 from backend.core import preferences
@@ -80,9 +84,9 @@ class PreferenceWiringTests(unittest.TestCase):
         self.env = patch.dict(os.environ, {'MIAO_DATA_DIR': self.tmp.name}, clear=False)
         self.env.start()
         preferences.reset_preferences_cache()
-        screen._scoped_ocr_engine.cache_clear()
+        screen.reset_ocr_engines()
         self.addCleanup(preferences.reset_preferences_cache)
-        self.addCleanup(screen._scoped_ocr_engine.cache_clear)
+        self.addCleanup(screen.reset_ocr_engines)
 
     def test_download_proxy_preference_reaches_opener(self):
         from backend.core.plugins import networking
@@ -100,6 +104,7 @@ class PreferenceWiringTests(unittest.TestCase):
             self.assertEqual(networking.resolve_proxies(), {})
 
     def _engine_params(self, providers):
+        screen.reset_ocr_engines()
         engine = Mock()
         engine.text_det.session.session.get_providers.return_value = providers
         rapid = SimpleNamespace(RapidOCR=Mock(return_value=engine))
@@ -122,17 +127,17 @@ class PreferenceWiringTests(unittest.TestCase):
         self.assertIs(params['EngineConfig.onnxruntime.use_cuda'], True)
 
     def test_reset_bumps_generation_and_reader_rebuilds_engine(self):
-        before = screen._engine_generation
+        before = screen.engine_generation()
         screen.reset_ocr_engines()
-        self.assertEqual(screen._engine_generation, before + 1)
+        self.assertEqual(screen.engine_generation(), before + 1)
         reader = screen.ScreenReader(Mock())
         reader._engine = 'stale-engine'
-        reader._engine_generation = screen._engine_generation - 1
+        reader._engine_generation = screen.engine_generation() - 1
         with patch.object(screen, 'local_ocr_engine', return_value='new-engine') as renewed:
             # Mirror the lazy resolution in ScreenReader._ocr_tile.
-            if reader._engine is None or reader._engine_generation != screen._engine_generation:
+            if reader._engine is None or reader._engine_generation != screen.engine_generation():
                 reader._engine = screen.local_ocr_engine()
-                reader._engine_generation = screen._engine_generation
+                reader._engine_generation = screen.engine_generation()
         renewed.assert_called_once()
         self.assertEqual(reader._engine, 'new-engine')
 
@@ -145,8 +150,8 @@ class PreferencesHttpTests(unittest.TestCase):
         self.env.start()
         preferences.reset_preferences_cache()
         self.addCleanup(preferences.reset_preferences_cache)
-        screen._scoped_ocr_engine.cache_clear()
-        self.addCleanup(screen._scoped_ocr_engine.cache_clear)
+        screen.reset_ocr_engines()
+        self.addCleanup(screen.reset_ocr_engines)
         self.hub = _Hub()
         self.server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(self.hub, 'test-token'))
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)

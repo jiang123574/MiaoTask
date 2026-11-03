@@ -6,6 +6,10 @@ from unittest.mock import Mock, patch
 
 from backend.core.device import screen
 
+# Preload OpenCV: ``patch.dict(sys.modules, ...)`` restores the mapping and
+# would otherwise drop a module first imported inside the patched block.
+import cv2  # noqa: F401
+
 
 class ResolveOCRBackendTests(unittest.TestCase):
     def test_default_auto_uses_cpu_without_cuda_ep(self):
@@ -57,14 +61,14 @@ class ScopedOCRBackendTests(unittest.TestCase):
             env.pop(screen.OCR_DEVICE_ENV, None)
         else:
             env[screen.OCR_DEVICE_ENV] = env_value
-        screen._scoped_ocr_engine.cache_clear()
+        screen.reset_ocr_engines()
         with patch.dict(sys.modules, {'rapidocr': rapid, 'onnxruntime': ort}), \
                 patch.dict(os.environ, env, clear=True):
             screen.local_ocr_engine()
         return rapid.RapidOCR.call_args.kwargs['params']
 
     def tearDown(self):
-        screen._scoped_ocr_engine.cache_clear()
+        screen.reset_ocr_engines()
 
     def test_default_engine_stays_cpu(self):
         params = self._wire(['CPUExecutionProvider'], None)
@@ -99,12 +103,22 @@ class ScopedOCRBackendTests(unittest.TestCase):
         rapid = SimpleNamespace(RapidOCR=Mock(return_value=engine))
         ort = SimpleNamespace(get_available_providers=Mock(
             return_value=['CUDAExecutionProvider', 'CPUExecutionProvider']))
-        screen._scoped_ocr_engine.cache_clear()
+        screen.reset_ocr_engines()
         with patch.dict(sys.modules, {'rapidocr': rapid, 'onnxruntime': ort}), \
                 patch.dict(os.environ, {screen.OCR_DEVICE_ENV: 'cuda'}, clear=True):
             screen.local_ocr_engine()
         self.assertIs(rapid.RapidOCR.call_args.kwargs['params'][
                       'EngineConfig.onnxruntime.use_cuda'], True)
+
+    def test_reset_drops_cached_engine_even_while_a_reader_holds_it(self):
+        from backend.core.device.ocr import scoped_engine
+        scope = ('device', 'reset-sample')
+        with patch('backend.core.device.ocr._create_engine', return_value=Mock()) as build:
+            first = scoped_engine(scope)
+            self.assertIs(scoped_engine(scope), first)
+            screen.reset_ocr_engines()
+            self.assertIsNot(scoped_engine(scope), first)
+            self.assertEqual(build.call_count, 2)
 
     def test_preload_failure_falls_back_to_the_system_search_path(self):
         engine = Mock()
@@ -112,7 +126,7 @@ class ScopedOCRBackendTests(unittest.TestCase):
         ort = SimpleNamespace(get_available_providers=Mock(
             return_value=['CUDAExecutionProvider', 'CPUExecutionProvider']),
             preload_dlls=Mock(side_effect=OSError('missing dll')))
-        screen._scoped_ocr_engine.cache_clear()
+        screen.reset_ocr_engines()
         with patch.dict(sys.modules, {'rapidocr': rapid, 'onnxruntime': ort}), \
                 patch.dict(os.environ, {screen.OCR_DEVICE_ENV: 'cuda'}, clear=True):
             screen.local_ocr_engine()
