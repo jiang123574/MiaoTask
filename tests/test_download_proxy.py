@@ -1,10 +1,13 @@
 import os
+import ssl
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, ProxyHandler
 
 from backend.core.plugins import networking
-from backend.core.plugins.networking import PROXY_ENV, normalize_proxy, official_opener, resolve_proxies
+from backend.core.plugins.networking import (PROXY_ENV, fetch_with_retry, network_hint,
+                                             normalize_proxy, official_opener, proxy_label, resolve_proxies)
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -52,8 +55,9 @@ class NormalizeProxyTests(unittest.TestCase):
         proxies = normalize_proxy('http://user:secret@127.0.0.1:7890')
         self.assertEqual(proxies, {'http': 'http://user:secret@127.0.0.1:7890',
                                    'https': 'http://user:secret@127.0.0.1:7890'})
-        with self.assertLogs('backend.core.plugins.networking', level='INFO') as logs:
-            normalize_proxy('http://user:secret@127.0.0.1:7890')
+        with patch.object(networking, 'resolve_proxies', return_value=proxies):
+            with self.assertLogs('backend.core.plugins.networking', level='DEBUG') as logs:
+                official_opener(_NoRedirect())
         self.assertIn('127.0.0.1:7890', '\n'.join(logs.output))
         self.assertNotIn('secret', '\n'.join(logs.output))
 
@@ -107,6 +111,73 @@ class OfficialOpenerTests(unittest.TestCase):
         with patch.object(networking, 'resolve_proxies', return_value={}):
             opener = official_opener(_NoRedirect())
         self.assertEqual(self._proxy_handlers(opener), [])
+
+    def test_proxy_choice_is_not_logged_at_info(self):
+        # One catalog refresh opens dozens of connections; INFO spam drowns the
+        # console, so the choice stays on DEBUG and only failures are reported.
+        mapping = {'http': 'http://192.0.2.10:7893', 'https': 'http://192.0.2.10:7893'}
+        with patch.object(networking, 'resolve_proxies', return_value=mapping):
+            with self.assertNoLogs('backend.core.plugins.networking', level='INFO'):
+                official_opener(_NoRedirect())
+
+
+class ProxyLabelTests(unittest.TestCase):
+    def test_label_drops_credentials_and_stray_paths(self):
+        self.assertEqual(proxy_label('http://user:secret@192.0.2.10:7893'), 'http://192.0.2.10:7893')
+        self.assertEqual(proxy_label('192.0.2.10:7893'), 'http://192.0.2.10:7893')
+        self.assertEqual(proxy_label('off'), '')
+
+
+class FetchRetryTests(unittest.TestCase):
+    """A LAN proxy drops the odd handshake; one hiccup must not kill a refresh."""
+
+    def test_transient_tls_failure_is_retried(self):
+        attempts = []
+
+        def flaky():
+            attempts.append(1)
+            if len(attempts) < 3:
+                raise URLError(ssl.SSLEOFError('EOF occurred in violation of protocol'))
+            return b'payload'
+
+        self.assertEqual(fetch_with_retry(flaky, pause=0), b'payload')
+        self.assertEqual(len(attempts), 3)
+
+    def test_server_answer_is_not_retried(self):
+        attempts = []
+
+        def missing():
+            attempts.append(1)
+            raise HTTPError('https://api.github.com/x', 404, 'Not Found', {}, None)
+
+        with self.assertRaises(HTTPError):
+            fetch_with_retry(missing, pause=0)
+        self.assertEqual(len(attempts), 1)
+
+    def test_validation_errors_surface_immediately(self):
+        attempts = []
+
+        def rejected():
+            attempts.append(1)
+            raise ValueError('活动下载发生不受信任的重定向')
+
+        with self.assertRaises(ValueError):
+            fetch_with_retry(rejected, pause=0)
+        self.assertEqual(len(attempts), 1)
+
+    def test_failure_hint_names_the_saved_proxy_without_credentials(self):
+        mapping = {'http': 'http://user:secret@192.0.2.10:7893',
+                   'https': 'http://user:secret@192.0.2.10:7893'}
+        with patch.object(networking, 'resolve_proxies', return_value=mapping):
+            hint = network_hint(URLError('handshake timeout'))
+        self.assertIn('192.0.2.10:7893', hint)
+        self.assertIn('直连', hint)
+        self.assertNotIn('secret', hint)
+
+    def test_hint_is_silent_for_direct_mode_and_bad_input(self):
+        with patch.object(networking, 'resolve_proxies', return_value={}):
+            self.assertEqual(network_hint(URLError('boom')), '')
+        self.assertEqual(network_hint(ValueError('活动下载内容过大')), '')
 
 
 if __name__ == '__main__':
