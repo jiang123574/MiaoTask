@@ -59,11 +59,14 @@ class Session:
         """
         limit = self.config.get('completion_return_ms', 1000) or 0
         if isinstance(limit, bool) or not isinstance(limit, (int, float)) or limit <= 0:
+            logger.debug('检测到完成提示，完成后随机返回延时为 %s，立即返回', limit)
             return
         delay = random.uniform(0, min(limit, 10000)) / 1000
         if deadline is not None:
             delay = min(delay, max(0, deadline - self.control.now()))
         if delay > 0:
+            logger.info('检测到完成提示，随机等待 %.0f 毫秒后返回（上限 %s 毫秒）',
+                        delay * 1000, limit)
             self.control.wait(delay)
 
 
