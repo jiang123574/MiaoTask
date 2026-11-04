@@ -1479,6 +1479,16 @@ class RunnerTests(unittest.TestCase):
         r.settle_completion(deadline=r.control.now())
         r.control.wait.assert_not_called()
 
+    def test_verified_task_waits_random_time_before_next(self):
+        from unittest.mock import patch
+        r, _, _ = self.scrolling_runner()
+        r.config['completion_return_ms'] = 800
+        with patch('backend.core.execution.session.random.uniform', return_value=800):
+            r.settle_between_tasks()
+        wait = r.control.wait.call_args.args[0]
+        self.assertGreater(wait, 0)
+        self.assertLessEqual(wait, .8)
+
     def test_completion_return_delay_waits_random_time_before_returning(self):
         r, clock, destination = self.scrolling_runner()
         completed = Screen([node('任务已完成', 800, 200)], 1440, 3200, r.origin)

@@ -57,16 +57,23 @@ class Session:
         0..N so 0 keeps the immediate return. `control.wait` still honours
         stop requests during the pause.
         """
+        self._settle_delay('检测到完成提示', deadline=deadline)
+
+    def settle_between_tasks(self):
+        """Random pause after a verified task, before starting the next one."""
+        self._settle_delay('核验成功')
+
+    def _settle_delay(self, reason, *, deadline=None):
         limit = self.config.get('completion_return_ms', 1000) or 0
         if isinstance(limit, bool) or not isinstance(limit, (int, float)) or limit <= 0:
-            logger.debug('检测到完成提示，完成后随机返回延时为 %s，立即返回', limit)
+            logger.debug('%s，完成后随机返回延时为 %s，立即继续', reason, limit)
             return
         delay = random.uniform(0, min(limit, 10000)) / 1000
         if deadline is not None:
             delay = min(delay, max(0, deadline - self.control.now()))
         if delay > 0:
-            logger.info('检测到完成提示，随机等待 %.0f 毫秒后返回（上限 %s 毫秒）',
-                        delay * 1000, limit)
+            logger.info('%s，随机等待 %.0f 毫秒后继续（上限 %s 毫秒）',
+                        reason, delay * 1000, limit)
             self.control.wait(delay)
 
 

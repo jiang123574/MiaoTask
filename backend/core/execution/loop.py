@@ -263,6 +263,7 @@ class SessionLoop:
                     elif updated is None and task.current == task.total - 1:
                         self.records[task.key].update(current=task.total, reason='任务完成后已从列表移除，已核验相邻任务位置')
                     logger.info('核验成功：%s', task.title)
+                    self.settle_between_tasks()
                 else:
                     self.report_failure('任务进度未增加', task, phase='verifying')
                     self.failures[(task.key, task.current)] += 1
