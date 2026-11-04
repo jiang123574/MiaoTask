@@ -188,9 +188,13 @@ class ActivityDescriptionTests(unittest.TestCase):
         registry=Registry(Path(__file__).resolve().parents[1]/'backend/app').discover()
         described=[(app['id'],activity['id'],activity['description']) for app in registry.catalog()
                    for activity in app['activities'] if activity.get('description')]
-        self.assertEqual([(a,b) for a,b,_ in described],[('zfb','yueyuezhuan')])
-        self.assertIn('这是一款转账红包（非支付减免红包）',described[0][2])
-        self.assertIn('积少成多',described[0][2])
+        self.assertCountEqual([(a,b) for a,b,_ in described],
+                              [('zfb','yueyuezhuan'),('jd','joy-travel')])
+        zfb=next(row for row in described if row[1]=='yueyuezhuan')
+        self.assertIn('这是一款转账红包（非支付减免红包）',zfb[2])
+        self.assertIn('积少成多',zfb[2])
+        joy=next(row for row in described if row[1]=='joy-travel')
+        self.assertIn('JOY 游记',joy[2])
 
 
 class CatalogOpeningLatencyTests(unittest.TestCase):
