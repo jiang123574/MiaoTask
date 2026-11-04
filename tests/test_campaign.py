@@ -33,6 +33,7 @@ def task_screen(progress=0, package='com.taobao.taobao', action='去完成'):
 
 class ScriptedObservation:
     """Deterministic frame delivery; the real threaded boundary is tested separately."""
+
     def __init__(self, runner, frame=None, delay=0):
         self.runner, self.frame, self.delay = runner, frame, delay
         self.pending = False
@@ -1467,6 +1468,17 @@ class RunnerTests(unittest.TestCase):
         self.assertTrue(explicit)
         self.assertLess(clock[0], 2)
 
+    def test_completion_delay_is_capped_by_remaining_budget(self):
+        from unittest.mock import patch
+        r, clock, _ = self.scrolling_runner()
+        r.config['completion_return_ms'] = 10000
+        with patch('backend.core.execution.session.random.uniform', return_value=10000):
+            r.settle_completion(deadline=r.control.now() + .2)
+        self.assertAlmostEqual(r.control.wait.call_args.args[0], .2)
+        r.control.wait.reset_mock()
+        r.settle_completion(deadline=r.control.now())
+        r.control.wait.assert_not_called()
+
     def test_completion_return_delay_waits_random_time_before_returning(self):
         r, clock, destination = self.scrolling_runner()
         completed = Screen([node('任务已完成', 800, 200)], 1440, 3200, r.origin)
@@ -1503,7 +1515,7 @@ class RunnerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate_config(config)
         config = load_config()
-        self.assertEqual(validate_config(config)['completion_return_ms'], 0)
+        self.assertEqual(validate_config(config)['completion_return_ms'], 1000)
 
 
     def test_newly_delivered_result_does_not_double_charge_previous_inference_age(self):
@@ -2393,6 +2405,7 @@ class SerialBrowseProtocolTests(unittest.TestCase):
 
     def test_retry_stops_after_completion_and_does_not_recheck_during_initial_window(self):
         r,clock,destination=self.runner();task=r.tasks(task_screen())[0]
+        r.config['completion_return_ms'] = 0  # This assertion isolates browse/recheck timing.
         r.task_policy.fail(task,2)
         completed=Screen([node('任务已完成',800,200)],1440,3200,r.origin)
         calls=[]
