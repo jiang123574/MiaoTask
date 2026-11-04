@@ -80,6 +80,18 @@ class EntryPolicy:
         """搜索结果页里的 JOY游记 入口卡片；首页没有固定宫格入口。"""
         return self._search_result(screen)
 
+    def official_activity_entry(self, screen):
+        """Navigator 契约：京东自家页面里识别 JOY游记 官方入口。
+
+        与搜索直达共用同一套识别（标题 + 同排动作按钮），避免两套
+        判定在搜索结果页互相打架。
+        """
+        try:
+            return self._search_result(screen)
+        except Exception as exc:
+            logger.info('识别JOY游记官方入口失败：%s', exc)
+            return None
+
     # ---- 搜索直达：首页搜索栏 → 输入 → 点结果卡片 ----
 
     @staticmethod
@@ -336,6 +348,16 @@ class EntryPolicy:
         return self._more_tasks_button(screen)
 
     # ---- 打开任务面板 ----
+
+    def open_task_panel(self, screen):
+        """Navigator 契约：从当前页打开任务面板（不重启应用）。"""
+        if self.is_task_list(screen.nodes):
+            return True
+        node = self.task_panel_entry(screen)
+        if node:
+            self.click(node)
+            return True
+        return False
 
     def enter_task_panel(self, screen, expected_activity=False):
         """从搜索结果/活动主页进入任务面板，并等待面板出现。"""
