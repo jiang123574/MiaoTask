@@ -108,6 +108,8 @@ class ActivityCatalogHub:
         preferences = load_preferences()
         providers = []
         try:
+            from backend.core.device.runtime_plugin import activate_runtime_plugin
+            activate_runtime_plugin()
             import onnxruntime
             providers = onnxruntime.get_available_providers()
         except Exception:
@@ -118,10 +120,15 @@ class ActivityCatalogHub:
     def update_preferences(self, payload):
         from backend.core.preferences import save_preferences
         updates = {key: payload[key] for key in ('download_proxy', 'ocr_device') if key in payload}
-        saved = save_preferences(updates)
-        # Rebuild OCR engines lazily on the next frame with the new backend.
-        from backend.core.device.screen import reset_ocr_engines
-        reset_ocr_engines()
+        before = self.get_preferences()['ocr_device']
+        with self.catalog_gate, self.lock:
+            if updates.get('ocr_device', before) != before and any(
+                    c.thread and c.thread.is_alive() for c in getattr(self,'controllers',{}).values()):
+                raise ValueError('请先停止设备任务，再切换OCR后端')
+            saved = save_preferences(updates)
+            if saved['ocr_device'] != before:
+                from backend.core.device.screen import reset_ocr_engines
+                reset_ocr_engines()
         return self.get_preferences()
 
     def open_activity_folder(self, origin):
