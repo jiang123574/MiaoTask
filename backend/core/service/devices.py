@@ -146,7 +146,7 @@ class DeviceHub(ActivityCatalogHub):
         if (not isinstance(keys, list) or not keys or len(keys) > self.limit or
                 any(not isinstance(key,str) for key in keys) or len(set(keys)) != len(keys)):
             raise ValueError('请选择不重复的设备工作区')
-        if action not in ('run','scan','open_app','pause','resume','stop'):
+        if action not in ('run','scan','open_app','pause','resume','stop','connect'):
             raise ValueError('不支持的批量操作')
         # Resolve every ID first. Offline/busy devices return their own failures;
         # successful workers start immediately and do not wait for other devices.
@@ -154,11 +154,19 @@ class DeviceHub(ActivityCatalogHub):
         results = []
         for key, controller in targets:
             try:
-                controller.dispatch(action, dict(config=payload.get('config', {}),
-                                                 auto_open=payload.get('auto_open', True),
-                                                 app=payload.get('app', controller.state['app']),
-                                                 activity=payload.get('activity', controller.state['activity']),
-                                                 **({'activities':payload['activities']} if 'activities' in payload else {})))
+                if action == 'connect':
+                    # One-click connect replays each workspace's saved address;
+                    # devices without one fall back to USB auto-selection.
+                    saved = controller.state.get('last_connection') or {}
+                    worker_payload = dict(config={}, device_type=saved.get('type', 'uiautomator2'),
+                                          serial=saved.get('serial') or None)
+                else:
+                    worker_payload = dict(config=payload.get('config', {}),
+                                          auto_open=payload.get('auto_open', True),
+                                          app=payload.get('app', controller.state['app']),
+                                          activity=payload.get('activity', controller.state['activity']),
+                                          **({'activities':payload['activities']} if 'activities' in payload else {}))
+                controller.dispatch(action, worker_payload)
                 results.append(dict(id=key, ok=True))
             except (ValueError, TypeError) as exc:
                 results.append(dict(id=key, ok=False, error=str(exc)))

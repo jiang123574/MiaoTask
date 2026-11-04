@@ -258,7 +258,7 @@ window.addEventListener('miaotask:device-selected',()=>{
 window.addEventListener('miaotask:batch',async event=>{
   if(event.detail.action==='run'&&!validateSettingsForm())return;
   try{if(event.detail.action==='run'&&!MiaoActivities.plan.length)throw new Error('请先勾选至少一个活动');const result=await MiaoAPI.request('/api/workspaces/batch',{method:'POST',token,payload:{...event.detail,config:config(),auto_open:true,activities:MiaoActivities.plan}});
-    const failed=result.results.filter(row=>!row.ok);toast(failed.length?failed.map(row=>row.error).join('；'):'所选设备已收到操作，各自独立执行');await poll();
+    const failed=result.results.filter(row=>!row.ok);toast(failed.length?failed.map(row=>row.error).join('；'):(event.detail.action==='connect'?'已开始连接所选设备，各自使用保存的地址':'所选设备已收到操作，各自独立执行'));await poll();
   }catch(error){toast(error.message);}
 });
 MiaoAPI.request('/api/workspaces').then(data=>{if(data.devices?.length&&!data.devices.some(row=>row.id===MiaoAPI.device))MiaoAPI.selectDevice(data.devices[0].id);}).catch(()=>{}).finally(()=>poll().then(()=>{discover();previewLoop();pollLoop();}));

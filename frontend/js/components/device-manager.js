@@ -52,7 +52,7 @@
     }
     $('device-count').textContent=rows.length+' / 8';$('batch-selection').textContent='已选 '+checked.size+' 台设备';
     $('add-device').disabled=preparing||Boolean(snapshot?.plugins_busy)||rows.length>=8;
-    $('batch-run').disabled=$('batch-open-app').disabled=!checked.size||Boolean(snapshot?.plugins_busy);
+    $('batch-run').disabled=$('batch-open-app').disabled=$('batch-connect').disabled=!checked.size||Boolean(snapshot?.plugins_busy);
     $('batch-stop').disabled=!checked.size;
     if(dialog.open){
       $('instance-panel').hidden=creating;
@@ -113,7 +113,7 @@
   for(const button of dialog.querySelectorAll('[data-connection-mode]'))button.addEventListener('click',()=>connectionMode(button.dataset.connectionMode));
   $('confirm-add-device').addEventListener('click',async()=>{try{await prepare();dialog.close();}catch(cause){$('add-device-message').textContent=cause.message;}});
   $('remove-device').addEventListener('click',async()=>{try{const id=editorId,result=await MiaoAPI.request('/api/workspaces/remove',{method:'POST',token:snapshot.token,payload:{id}});checked.delete(id);dialog.close();select(result.devices[0].id);}catch(cause){error(cause.message);}});
-  for(const [id,action] of [['batch-run','run'],['batch-open-app','open_app'],['batch-stop','stop']])$(id).addEventListener('click',()=>window.dispatchEvent(new CustomEvent('miaotask:batch',{detail:{devices:[...checked],action}})));
+  for(const [id,action] of [['batch-connect','connect'],['batch-run','run'],['batch-open-app','open_app'],['batch-stop','stop']])$(id).addEventListener('click',()=>window.dispatchEvent(new CustomEvent('miaotask:batch',{detail:{devices:[...checked],action}})));
   window.addEventListener('miaotask:device-selected',()=>{saveDraft();if(dialog.open&&editorId!==MiaoAPI.device)dialog.close();});
   window.addEventListener('miaotask:state',event=>{snapshot=event.detail;const known=new Set((snapshot.workspaces||[]).map(row=>row.id));checked=new Set([...checked].filter(id=>known.has(id)));render();if(wanted===snapshot.workspace_id)openEditor(wanted);});
   window.MiaoDevices=Object.freeze({prepare,refresh:render,get creating(){return creating&&dialog.open;},get preparing(){return preparing;}});

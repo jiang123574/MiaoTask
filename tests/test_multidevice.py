@@ -144,6 +144,25 @@ class HubTests(unittest.TestCase):
         self.assertTrue(result[0]['ok']);self.assertFalse(result[1]['ok']);accepted.assert_called_once()
         with self.assertRaises(ValueError):hub.batch(dict(devices=[second,second]))
 
+    def test_batch_connect_replays_each_workspace_saved_connection(self):
+        hub=DeviceHub();second=hub.add('second');third=hub.add('third')
+        hub.resolve('default').update(last_connection=dict(type='uiautomator2',serial='usb-serial-1'))
+        hub.resolve(second).update(last_connection=dict(type='hmdriver2',serial='emulator-5554'))
+        calls=[]
+        def recorder(key):
+            def dispatch(action,payload):
+                calls.append((key,action,payload['device_type'],payload['serial'],payload['config']))
+            return dispatch
+        with patch.object(hub.resolve('default'),'dispatch',side_effect=recorder('default')):
+            with patch.object(hub.resolve(second),'dispatch',side_effect=recorder('second')):
+                with patch.object(hub.resolve(third),'dispatch',side_effect=recorder('third')):
+                    results=hub.batch(dict(devices=['default',second,third],action='connect',config={'max_tasks':5}))
+        self.assertTrue(all(row['ok'] for row in results))
+        self.assertEqual(calls,[('default','connect','uiautomator2','usb-serial-1',{}),
+                                ('second','connect','hmdriver2','emulator-5554',{}),
+                                ('third','connect','uiautomator2',None,{})])
+        with self.assertRaises(ValueError):hub.batch(dict(devices=['default'],action='reboot'))
+
     def test_shutdown_blocks_new_workers_and_workspace_creation(self):
         hub=DeviceHub();hub.stop_all()
         with self.assertRaises(ValueError):hub.add()
