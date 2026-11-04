@@ -127,13 +127,19 @@ class ScreenReader:
         if self.control:
             self.control.check()
 
+    @property
+    def ocr_backend(self):
+        """Actual loaded backend, including a runtime CPU fallback; never loads models."""
+        return getattr(getattr(self._engine, 'engine', None), 'miao_backend', None)
+
     def _ocr_tile(self, image):
         self._check_ocr()
         # A backend switch bumps the generation; rebuild instead of reusing an
         # engine whose provider no longer matches the saved preference.
         if self._engine is None or self._engine_generation != engine_generation():
+            generation = engine_generation()
             self._engine = local_ocr_engine(self._ocr_scope, self.ocr_threads)
-            self._engine_generation = engine_generation()
+            self._engine_generation = generation
         import numpy as np
         prepared = self.image_processor.prepare(image)
         image = prepared.image
