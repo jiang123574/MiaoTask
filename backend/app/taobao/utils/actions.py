@@ -564,7 +564,13 @@ class TaskActions:
                     self.control.wait(min(interval,max(0,deadline-self.control.now())))
             self.control.check()
 
-        browse_for(seconds)
+        # Timeout returns get a random extension so the browse window is not
+        # a constant: the extra time keeps swiping instead of idling.
+        jitter = self.completion_jitter(deadline=hard_deadline)
+        if jitter > 0:
+            logger.info('浏览到时，随机延长 %.0f 毫秒后返回（上限 %s 毫秒）',
+                        jitter * 1000, self.config.get('completion_return_ms'))
+        browse_for(seconds + jitter)
         if not (retry or first_check) or self.control.now() >= hard_deadline:
             return False, cross
         # Fast CUDA inference checks the real countdown at the first deadline.

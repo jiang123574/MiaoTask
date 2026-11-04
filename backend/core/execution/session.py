@@ -63,6 +63,21 @@ class Session:
         """Random pause after a verified task, before starting the next one."""
         self._settle_delay('核验成功')
 
+    def completion_jitter(self, *, deadline=None):
+        """Random browse-window extension (seconds) so timeout returns vary.
+
+        Draws the same 0..`completion_return_ms` budget as the other settle
+        points but returns the duration instead of sleeping, so callers can
+        spend it browsing rather than idling.
+        """
+        limit = self.config.get('completion_return_ms', 1000) or 0
+        if isinstance(limit, bool) or not isinstance(limit, (int, float)) or limit <= 0:
+            return 0
+        delay = random.uniform(0, min(limit, 10000)) / 1000
+        if deadline is not None:
+            delay = min(delay, max(0, deadline - self.control.now()))
+        return delay
+
     def _settle_delay(self, reason, *, deadline=None):
         limit = self.config.get('completion_return_ms', 1000) or 0
         if isinstance(limit, bool) or not isinstance(limit, (int, float)) or limit <= 0:

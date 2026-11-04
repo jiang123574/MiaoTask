@@ -1413,6 +1413,9 @@ class RunnerTests(unittest.TestCase):
 
     def scrolling_runner(self):
         r = self.runner()
+        # Timing-sensitive tests isolate from the random browse extension;
+        # the dedicated jitter tests set completion_return_ms explicitly.
+        r.config['completion_return_ms'] = 0
         clock = [0.0]
         r.control.now = lambda: clock[0]
         r.control.wait.side_effect = lambda seconds: clock.__setitem__(0, clock[0] + seconds)
@@ -1488,6 +1491,18 @@ class RunnerTests(unittest.TestCase):
         wait = r.control.wait.call_args.args[0]
         self.assertGreater(wait, 0)
         self.assertLessEqual(wait, .8)
+
+    def test_timeout_jitter_extends_browse_within_limit(self):
+        from unittest.mock import patch
+        r, _, _ = self.scrolling_runner()
+        r.config['completion_return_ms'] = 800
+        with patch('backend.core.execution.session.random.uniform', return_value=800):
+            self.assertEqual(r.completion_jitter(), .8)
+        r.config['completion_return_ms'] = 800
+        with patch('backend.core.execution.session.random.uniform', return_value=800):
+            self.assertEqual(r.completion_jitter(deadline=r.control.now() + .1), .1)
+        r.config['completion_return_ms'] = 0
+        self.assertEqual(r.completion_jitter(), 0)
 
     def test_completion_return_delay_waits_random_time_before_returning(self):
         r, clock, destination = self.scrolling_runner()
@@ -2403,6 +2418,7 @@ class SerialBrowseProtocolTests(unittest.TestCase):
 
     def test_cuda_first_pass_checks_and_supplements_remaining_countdown(self):
         r, clock, destination = self.runner()
+        r.config['completion_return_ms'] = 0  # This assertion isolates browse timing.
         r.reader._engine = Mock(engine=Mock(miao_backend='cuda'))
         pending = Screen([node('还需浏览2秒', 100, 150)], 1440, 3200, r.origin)
         done = Screen([node('任务已完成', 100, 150)], 1440, 3200, r.origin)

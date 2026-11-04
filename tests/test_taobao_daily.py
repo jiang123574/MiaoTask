@@ -44,7 +44,7 @@ class TaobaoDailyTests(unittest.TestCase):
                     runner.browse_swipe = lambda screen: clock.__setitem__(0, clock[0] + .5)
                     runner.guard = Mock()
                     runner.check_destination = Mock()
-                    runner.config.update(scroll_browse=True, browse_recheck_rounds=3)
+                    runner.config.update(scroll_browse=True, browse_recheck_rounds=3, completion_return_ms=0)
                     pending = Screen([TextNode('浏览商品', (10,300,300,350))], 1080,2400,runner.origin)
                     completed = Screen([TextNode('任务已完成', (10,300,300,350))],1080,2400,runner.origin)
                     runner.read = Mock(return_value=completed)
