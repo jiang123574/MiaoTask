@@ -137,7 +137,7 @@ manifest 和活动都是会被导入的 Python 代码，应随 PR 审阅。源�
 runtime/apps/<app>/activities/<activity>/daily/<date>/<device_hash>/instances/<instance_hash>/
 ```
 
-便携版的数据根仍为 `%LOCALAPPDATA%/MiaoTask`，`MIAO_DATA_DIR` 仍可覆盖。设备、应用、活动、实例、日期分别隔离。只有明确声明 `legacy_storage=True` 的原活动会接续旧 `daily/` 记录：检查身份后复制状态、事件和失败现场，保留旧文件，首次完成后不再导入，避免重复累计。单独调用 `DailyState` 且不传命名空间时仍可读取旧布局。
+便携版的数据根为 `%LOCALAPPDATA%/MiaoTask`，macOS 为 `~/Library/Application Support/MiaoTask`，`MIAO_DATA_DIR` 仍可覆盖。设备、应用、活动、实例、日期分别隔离。只有明确声明 `legacy_storage=True` 的原活动会接续旧 `daily/` 记录：检查身份后复制状态、事件和失败现场，保留旧文件，首次完成后不再导入，避免重复累计。单独调用 `DailyState` 且不传命名空间时仍可读取旧布局。
 
 `core/execution/task_policy.py` 管理通用任务选择和失败预算，数据由 `DailyState` 保存；任务身份由规范化标题、任务类型、总次数、浏览时长和目标应用契约生成，不使用屏幕位置、当前进度或临时按钮文字。标题或契约变化视作新任务，避免同位置替换后继承跳过。失败累计达到本轮配置上限后当天不再选择；用户选“执行”可清除该任务失败预算和手动跳过，安全策略、任务类型设置和已确认应用缺失仍有效。停止、身份错误和人工认证不按普通失败计数。
 

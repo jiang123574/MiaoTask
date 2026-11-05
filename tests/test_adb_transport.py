@@ -161,7 +161,7 @@ class AdbTransportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             tools = Path(folder) / 'shared' / 'tools'
             tools.mkdir(parents=True)
-            executable = tools / 'adb.exe'
+            executable = tools / transport.ADB_EXECUTABLE
             executable.write_bytes(b'test-executable')
             with patch.dict(os.environ, {'ADBUTILS_ADB_PATH': ''}), patch.object(
                     transport.sys, 'frozen', True, create=True), patch.object(

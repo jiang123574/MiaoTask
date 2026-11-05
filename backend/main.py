@@ -111,9 +111,9 @@ def launch():
     except Exception:
         logging.exception('启动失败')
         if getattr(sys, 'frozen', False):
-            import ctypes
             from backend.core.runtime import data_dir
-            ctypes.windll.user32.MessageBoxW(0, f'启动失败，请查看日志：\n{data_dir() / "application.log"}', '喵任务', 16)
+            from backend.core.service.desktop import show_error_dialog
+            show_error_dialog('喵任务', f'启动失败，请查看日志：\n{data_dir() / "application.log"}')
         raise
     finally:
         if owned_adb is not None:

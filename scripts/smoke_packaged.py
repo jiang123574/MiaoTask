@@ -69,8 +69,13 @@ def smoke(executable, output=None, *, activity_packages=()):
     with tempfile.TemporaryDirectory(prefix='miao-package-check-') as work:
         folder = Path(work)
         env = os.environ.copy()
-        windows = env.get('SystemRoot', r'C:\Windows')
-        env['PATH'] = os.pathsep.join([str(Path(windows) / 'System32'), windows])
+        if os.name == 'nt':
+            windows = env.get('SystemRoot', r'C:\Windows')
+            env['PATH'] = os.pathsep.join([str(Path(windows) / 'System32'), windows])
+        else:
+            # Keep only the system tools the packaged app may call (ps, open,
+            # osascript); no Python, Homebrew or user ADB can leak in.
+            env['PATH'] = '/usr/bin:/bin:/usr/sbin:/sbin'
         env['MIAO_DATA_DIR'] = str(folder / 'data')
         for key in ('PYTHONPATH', 'PYTHONHOME', 'ADBUTILS_ADB_PATH', 'MIAO_ACTIVITIES_DIR'):
             env.pop(key, None)

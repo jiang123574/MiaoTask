@@ -43,7 +43,7 @@ def resolve_adb_binary():
     bundled = local_adb_binary()
     if getattr(sys, 'frozen', False):
         if not bundled.is_file():
-            raise AndroidConnectionError('便携包缺少 ADB，请完整解压后再运行')
+            raise AndroidConnectionError('安装包缺少 ADB，请重新安装完整版本')
         return str(bundled.resolve())
     if bundled.is_file():
         return str(bundled.resolve())

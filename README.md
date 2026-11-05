@@ -9,7 +9,7 @@
 一个本地网页，管理手机、平板与模拟器的重复任务。
 
 [![下载](https://img.shields.io/github/v/release/h0ll0w-AkuZr0guY/MiaoTask?label=Download&color=f97316&filter=MiaoTask-v*&sort=date)](https://github.com/h0ll0w-AkuZr0guY/MiaoTask/releases/latest)
-![平台](https://img.shields.io/badge/Windows_x64-Android-315f56)
+![平台](https://img.shields.io/badge/Windows_x64_%C2%B7_macOS-Android-315f56)
 [![License](https://img.shields.io/badge/License-Apache_2.0-2563eb)](LICENSE)
 [![Star](https://img.shields.io/github/stars/h0ll0w-AkuZr0guY/MiaoTask?style=flat&color=e8ab38)](https://github.com/h0ll0w-AkuZr0guY/MiaoTask/stargazers)
 
@@ -56,6 +56,8 @@
 
 在线更新需要电脑访问官方资源源。每次打开活动中心检查一次，之后可手动刷新；API 限流时尝试备用通道。安装过的活动保留恢复包，卸载后可点「离线恢复」；预装项另有随包恢复基线。已有内置活动的旧包仍可照常使用，升级时完整解压新框架。
 
+**macOS**：可以源码运行，也可用本仓库的 macOS 打包脚本生成自包含目录（见[构建文档](docs/BUILDING.md#macos-打包)）。安装 Python 3.13（`brew install python@3.13`），首次在仓库目录执行 `python3 scripts/fetch_platform_tools.py` 把官方 ADB 下载到源码目录（无需系统安装或改 PATH），再运行 `./start.command`。macOS 没有托盘图标，任务随终端运行：请保留终端窗口，按 `Ctrl+C` 停止；源码运行时的日记录、诊断与日志在仓库 `runtime/`，打包版在 `~/Library/Application Support/MiaoTask`，公共设置始终在该目录（`MIAO_DATA_DIR` 可统一覆盖）。确认 USB 调试授权、无线配对与 WLAN 访问均与 Windows 相同。开发环境步骤见[开发指南](docs/DEVELOPMENT.md#macos-源码运行)。
+
 可选GPU加速：[CUDA扩展 v1.0 独立下载](https://github.com/h0ll0w-AkuZr0guY/MiaoTask/releases/tag/MiaoTask-CUDA-v1.0)。它不包含主程序，CPU基础包无需安装扩展即可运行。先退出托盘服务，将扩展的 `runtime_plugins/` 放到 `MiaoTask.exe` 同级，重启后在高级选项选择自动或CUDA。无需安装Torch，不覆盖 `_internal/`；更新框架时可迁移兼容的扩展目录。详见[使用条件、安装与回退](docs/USAGE.md#安装可选cuda扩展)。
 
 ### USB 连接
@@ -76,7 +78,7 @@
 
 ![无线连接向导：首次配对和连接分开，四段 IP 与端口独立填写](docs/assets/feature-wifi.png)
 
-关闭网页后任务仍在后台运行。退出或升级时，使用 **Windows 托盘菜单**。更多连接、分身和异常处理说明见[使用文档](docs/USAGE.md)。
+关闭网页后任务仍在后台运行。Windows 退出或升级时使用 **Windows 托盘菜单**；macOS 等源码运行时保留终端窗口，按 `Ctrl+C` 停止服务。更多连接、分身和异常处理说明见[使用文档](docs/USAGE.md)。
 
 > 调试授权允许程序操作手机。页面变化与平台规则可能带来误操作、认证或账号风险；随机滚动不保证规避风控。登录、安全认证与真实交易由本人处理。使用前请阅读[风险与隐私](docs/SAFETY.md)。
 

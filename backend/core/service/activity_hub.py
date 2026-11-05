@@ -132,12 +132,10 @@ class ActivityCatalogHub:
         return self.get_preferences()
 
     def open_activity_folder(self, origin):
-        import os
+        from backend.core.service import desktop
         # Never accept a path from the browser; only open the resolved installation.
         folder = self._manager(origin).root
-        if not hasattr(os, 'startfile'):
-            raise ValueError('此系统不支持打开文件夹，请按活动中心显示的路径访问')
-        os.startfile(str(folder))
+        desktop.open_path(str(folder))
         return str(folder)
 
     def _plugin_work(self, manager, action, app, activity, source_commit=None):
