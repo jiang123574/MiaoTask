@@ -20,7 +20,8 @@ class JoyTravelActivity(EntryPolicy, TaskActions, VerificationPolicy, Destinatio
     external_apps = EXTERNAL_APPS
 
     # 任务行尚未渲染出来时，页面只会有活动标题，不会有任何任务按钮
-    _ROW_ACTIONS = frozenset({'去完成', '去看看', '去浏览', '去逛逛', '领取', '立即领取'})
+    _ROW_ACTIONS = frozenset({'去完成', '去看看', '去浏览', '去逛逛', '逛一逛',
+                              '领取', '立即领取'})
 
     @staticmethod
     def default_config():

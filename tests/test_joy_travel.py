@@ -27,6 +27,34 @@ PANEL = [
     node('去完成', (1000, 640, 1200, 700)),
 ]
 
+# 真机面板（2026-11-04 1440x3200 截图 OCR 实得）：标题 + 右侧按钮 + 下方
+# 奖励副标题三段式；最后一行的「点击查收AI虚拟宠物」是聊天任务，必须排除。
+REAL_PANEL = [
+    node('JOY游记', (82, 151, 348, 209)),
+    node('做任务赚晶石', (392, 656, 688, 709)),
+    node('去签到', (874, 854, 988, 901)),
+    node('逛AI办公提效(0/1)', (187, 1079, 564, 1131)),
+    node('逛一逛', (873, 1109, 990, 1156)),
+    node('浏览10s+15', (186, 1143, 421, 1188)),
+    node('逛一逛精选活动(0/8)', (187, 1303, 623, 1355)),
+    node('去完成', (873, 1332, 991, 1383)),
+    node('浏览10s可得+25', (186, 1369, 495, 1413)),
+    node('组队天天赢黄金(0/1)', (186, 1526, 614, 1582)),
+    node('逛一逛', (871, 1557, 990, 1608)),
+    node('浏览10s+15', (182, 1589, 423, 1640)),
+    node('领最高80元微信现金(0/1)', (188, 1753, 718, 1805)),
+    node('逛一逛', (870, 1779, 991, 1832)),
+    node('完成访问+15', (186, 1817, 438, 1862)),
+    node('每日领京豆/现金(0/1)', (187, 1975, 632, 2031)),
+    node('逛一逛', (871, 2005, 991, 2056)),
+    node('浏览10s+15', (184, 2039, 423, 2088)),
+    node('点击查收AI虚拟宠物(0/1)', (187, 2200, 703, 2256)),
+    node('去完成', (873, 2230, 991, 2281)),
+    node('与DD聊一次天+50', (184, 2264, 529, 2311)),
+]
+
+REAL_W, REAL_H = 1080, 2400
+
 WIDTH, HEIGHT = 1344, 3048
 
 
@@ -38,11 +66,26 @@ class ParseTests(unittest.TestCase):
         self.assertTrue(all(t.kind == 'browse' for t in tasks))
         self.assertTrue(all(t.action == 'browse' for t in tasks))
 
+    def test_real_panel_parses_five_browse_rows_and_drops_chat_task(self):
+        tasks = parse_tasks([n for n in REAL_PANEL], REAL_W, REAL_H)
+        self.assertEqual([t.title for t in tasks],
+                         ['逛AI办公提效', '逛一逛精选活动', '组队天天赢黄金',
+                          '领最高80元微信现金', '每日领京豆/现金'])
+        progress = {t.title: (t.current, t.total) for t in tasks}
+        self.assertEqual(progress['逛一逛精选活动'], (0, 8))
+        self.assertNotIn('点击查收AI虚拟宠物', progress)
+
+    def test_real_panel_is_recognized_by_ocr_header_with_leading_back_arrow(self):
+        # OCR 常把返回箭头粘在标题前：「<JOY游记」仍须通过身份锁。
+        panel = [node('<JOY游记', (59, 150, 350, 210))] + \
+                [n for n in REAL_PANEL if n.text != 'JOY游记']
+        self.assertTrue(is_task_list(panel))
+
     def test_panel_without_identity_title_is_not_a_task_list(self):
         # 东东农场等京东其他互动游戏的任务面板同样满是「去完成」，
-        # 没有身份标题时 is_task_list 必须拒绝（框架只在 is_task_list
-        # 通过后才会调度 parse_tasks 的结果执行）。
-        strangers = [n for n in PANEL if n.text != 'JOY游记']
+        # 没有 JOY游记 身份标题时 is_task_list 必须拒绝。
+        strangers = [n for n in PANEL
+                     if n.text not in ('JOY游记', '做任务赚晶石')]
         self.assertFalse(is_task_list(strangers))
         self.assertTrue(is_task_list(PANEL))
 

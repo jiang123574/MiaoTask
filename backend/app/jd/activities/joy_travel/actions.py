@@ -1,10 +1,15 @@
-"""JOY游记浏览任务执行。
+"""JOY游记浏览任务执行（2026-11-04 真机核对）。
 
-流程（对齐支付宝月月赚的已验证模式，细节待真机核对）：
-    点「去完成/去浏览」 → 落地浏览页 → 停留数秒 → 返回
-    → 可能弹出奖励到账浮层（晶石/京豆） → 关闭浮层或返回键兜底
+真机流程：
+    点任务行右侧「逛一逛」 → 京东站内会场页（同包名，独立滚动）
+    → 停留浏览 10 秒左右并滑动几次 → 返回键回到活动页任务面板
+    → 该任务行从面板消失（今日已完成），或进度 (0/8)→(1/8)
 
-一律用 self.read()：让框架自动在「UI 控件树」和「OCR」之间选。
+注意事项：
+* 京东的浏览任务是「跳会场页」，不是淘宝那种列表内滑动，因此必须
+  真的等够 10 秒再返回，早退拿不到晶石。
+* 返回后可能落在活动主页而不是任务面板，需要 ensure_task_list 兜一层。
+* 完成后整行会从面板移除，所以「行消失」是正常完成信号，不是失败。
 """
 import logging
 
@@ -77,6 +82,32 @@ class TaskActions:
         visit(screen.tree)
         return TextNode('', min(cands)[2]) if cands else None
 
+    # ---- 浏览会场页 ----
+
+    def _browse_scroll(self, seconds):
+        """在会场页停留指定时长，期间滑动两次模拟真实浏览。"""
+        remaining = float(seconds)
+        swipes = 0
+        while remaining > 0:
+            step = min(3.0, remaining)
+            self.control.wait(step)
+            remaining -= step
+            if swipes < 2 and remaining > 1.5:
+                try:
+                    self.swipe_browse()
+                    swipes += 1
+                except Exception as exc:      # 滑动失败不影响计时
+                    logger.info('会场页滑动失败：%s', exc)
+
+    def swipe_browse(self):
+        """会场页统一用长距离上滑（H5 页面吃不住小幅随机手势）。"""
+        screen = self.read()
+        x = int(screen.width * 0.5)
+        self.device.swipe(x, int(screen.height * 0.82),
+                          x, int(screen.height * 0.38), duration=0.7)
+
+    # ---- 主执行 ----
+
     def execute(self, task, before):
         self._active_task = task
         self.update('opening', message='打开任务：' + task.title, remaining=0)
@@ -86,45 +117,58 @@ class TaskActions:
             logger.info('未在当前列表找到任务按钮：%s', task.title)
             return self.recover(), False, False
         self.click(target)
-        self.control.wait(0.8)
-        # 捷径：浏览页停留数秒后直接返回即可完成（无需真正等待倒计时）
-        shortcut = float(self.config.get('browse_shortcut_seconds', 6))
-        self.control.wait(shortcut)
-        screen = self.recover()
-        # 防呆：确认真的回到了 JOY游记任务面板，不是京东其他互动游戏页。
-        screen = self.ensure_task_list(screen)
+        self.control.wait(1.2)
 
-        # 奖励到账弹窗：视为成功，并关闭浮层
+        # 京东的浏览任务应跳到站内会场页（同包名）。仍在任务面板说明
+        # 点击没生效或弹出了说明层，短暂等待后按返回键兜底。
+        landed = self.read()
+        if self.is_task_list(landed.nodes):
+            self.control.wait(1.2)
+            landed = self.read()
+            if self.is_task_list(landed.nodes):
+                logger.info('点击后仍在任务面板，按返回键兜底：%s', task.title)
+                self.device.go_back()
+                self.control.wait(1.0)
+
+        seconds = float(self.config.get('browse_shortcut_seconds', 12))
+        self.update('browsing', message=f'浏览会场 {int(seconds)} 秒：' + task.title)
+        self._browse_scroll(seconds)
+
+        # 返回活动页
+        self.device.go_back()
+        self.control.wait(1.6)
+        screen = self.read()
+        if not (self.is_task_list(screen.nodes) or self.activity_landing(screen)):
+            screen = self.ensure_task_list(screen)
+
+        # 奖励到账浮层：最直接的完成证据，关闭后继续下一个
         popup = self._reward_popup(screen)
         if popup:
             self.update('browsing', message='奖励已到账，关闭提示浮层')
             closer = self._popup_closer(screen)
             if closer:
-                # 优先点关闭按钮：不会退出活动页，可以紧接着做下一个任务
                 logger.info('关闭奖励浮层：命中关闭控件 bounds=' + str(closer.bounds))
                 self.click(closer)
                 self.control.wait(1.2)
                 screen = self.read()
             if self._reward_popup(screen):
-                # 读不到关闭按钮时，返回键是兜底，
-                # 代价是会退出活动页，下一个任务由框架重新导航进入。
                 self.device.go_back()
                 self.control.wait(1.2)
                 screen = self.read()
             return screen, True, False
 
-        # 少数任务需要手动领取
-        claim_label = self.config.get('claim_label', '领取')
-        claim = (next((n for n in screen.nodes if claim_label in normalize(n.text)), None)
-                 if self.config.get('claim_rewards', True) else None)
-        receipt = False
-        if claim:
-            self.click(claim)
-            self.control.wait(0.8)
-            screen = self.read()
-            if self._reward_popup(screen):
-                receipt = True
-                self.device.go_back()
-                self.control.wait(1.2)
-                screen = self.read()
-        return screen, receipt, False
+        return screen, self._row_finished(task, screen), False
+
+    def _row_finished(self, task, screen):
+        """任务行是否已结算：行消失、进度前进、或行尾变「已完成」。"""
+        if not (self.is_task_list(screen.nodes) or self.activity_landing(screen)):
+            return False
+        rows = {t.title: t for t in self.tasks(screen)}
+        row = rows.get(task.title)
+        if row is not None:
+            if row.current > task.current:
+                return True
+            done = getattr(self, 'parse_done_titles', None)
+            return bool(done and task.title in done(screen.nodes, screen.width, screen.height))
+        # 真机核对：完成的浏览任务会整行从面板移除。
+        return True

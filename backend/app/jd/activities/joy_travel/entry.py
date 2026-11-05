@@ -65,11 +65,26 @@ class EntryPolicy:
 
     # ---- 入口定位 ----
 
+    def _reward_entry(self, screen):
+        """京东首页右下方的「点我领奖」悬浮入口（真机核对 2026-11-04）。
+
+        该入口是 H5 浮标，UI 树里没有文本，只能靠 OCR。文案在不同版本
+        略有差异，按「点我领奖 / 点我领」包含匹配。
+        """
+        labels = self.config.get('homepage_entry_labels') or ['点我领奖']
+        for label in labels:
+            target = _norm(label)
+            for n in screen.nodes:
+                text = _norm(n.text).replace(' ', '')
+                if target and target in text:
+                    return n
+        return None
+
     def task_panel_entry(self, screen):
-        """活动主页里打开任务面板的入口（做任务/赚晶石/更多任务）。"""
+        """活动主页里打开任务面板的入口（去赚奖励 / 做任务 / 赚晶石）。"""
         if self.is_task_list(screen.nodes):
             return None
-        for label in self.config.get('task_entry_labels', ['做任务']):
+        for label in self.config.get('task_entry_labels', ['去赚奖励']):
             text = _norm(label)
             for n in screen.nodes:
                 if _norm(n.text) == text and 0 < n.bounds[2] - n.bounds[0] < screen.width * 0.6:
@@ -77,17 +92,17 @@ class EntryPolicy:
         return None
 
     def activity_entry(self, screen, homepage=False):
-        """搜索结果页里的 JOY游记 入口卡片；首页没有固定宫格入口。"""
-        return self._search_result(screen)
+        """首页：点「点我领奖」直接进活动；搜索页：点搜索结果卡片。"""
+        return self._reward_entry(screen) or self._search_result(screen)
 
     def official_activity_entry(self, screen):
         """Navigator 契约：京东自家页面里识别 JOY游记 官方入口。
 
-        与搜索直达共用同一套识别（标题 + 同排动作按钮），避免两套
-        判定在搜索结果页互相打架。
+        与常规入口共用同一套识别（首页浮标 / 搜索结果卡片），避免两套
+        判定在同一个页面上互相打架。
         """
         try:
-            return self._search_result(screen)
+            return self.activity_entry(screen, homepage=self.homepage_visible(screen))
         except Exception as exc:
             logger.info('识别JOY游记官方入口失败：%s', exc)
             return None
