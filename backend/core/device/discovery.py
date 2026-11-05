@@ -17,22 +17,41 @@ class AndroidConnectionError(ConnectionError):
     """A connection needs a cable, a phone authorization, or device selection."""
 
 
+ADB_EXECUTABLE = 'adb.exe' if os.name == 'nt' else 'adb'
+
+
+def local_adb_binary():
+    """Absolute path of the ADB shipped with the package or prepared in the tree.
+
+    The source-tree copy is produced by scripts/fetch_platform_tools.py and is
+    ignored by Git. It is found by path, never by searching or mutating PATH.
+    """
+    if getattr(sys, 'frozen', False):
+        return Path(sys._MEIPASS) / 'shared' / 'tools' / ADB_EXECUTABLE
+    return (Path(__file__).resolve().parents[3] / 'build' / 'vendor'
+            / 'platform-tools' / ADB_EXECUTABLE)
+
+
 def resolve_adb_binary():
-    """Use the same bundled/explicit executable as adbutils, then the PATH one."""
+    """One absolute ADB path shared by project subprocesses and adbutils."""
     explicit = os.environ.get('ADBUTILS_ADB_PATH')
     if explicit:
         candidate = Path(explicit).expanduser()
         if not candidate.is_file():
-            raise AndroidConnectionError('配置的 ADB 程序不存在，请重新解压完整便携包')
+            raise AndroidConnectionError('配置的 ADB 程序不存在，请检查 ADB 路径或重新安装完整版本')
         return str(candidate.resolve())
+    bundled = local_adb_binary()
     if getattr(sys, 'frozen', False):
-        candidate = Path(sys._MEIPASS) / 'shared' / 'tools' / 'adb.exe'
-        if not candidate.is_file():
+        if not bundled.is_file():
             raise AndroidConnectionError('便携包缺少 ADB，请完整解压后再运行')
-        return str(candidate.resolve())
+        return str(bundled.resolve())
+    if bundled.is_file():
+        return str(bundled.resolve())
     candidate = shutil.which('adb')
     if not candidate:
-        raise AndroidConnectionError('未找到 ADB，请使用完整便携包或将 platform-tools 加入 PATH')
+        raise AndroidConnectionError(
+            '未找到 ADB：运行 python scripts/fetch_platform_tools.py 把官方副本'
+            '（含 Windows 所需 DLL）准备到 build/vendor/platform-tools/，无需安装或改动 PATH')
     return str(Path(candidate).resolve())
 
 

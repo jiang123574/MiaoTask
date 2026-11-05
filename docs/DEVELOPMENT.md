@@ -4,7 +4,7 @@
 
 ## 源码运行
 
-使用 Python 3.13，准备可用的 Android ADB；手机保持解锁并允许调试。HarmonyOS 驱动接口需要另行提供 HDC，当前便携包不包含 HDC。
+使用 Python 3.13，准备可用的 Android ADB；手机保持解锁并允许调试。ADB 无需安装到系统、也无需加入 PATH：本机没有 ADB 时执行一次 `python scripts/fetch_platform_tools.py`，官方 platform-tools（Windows 下含 `adb.exe` 运行所需的 DLL）会下载到 `build/vendor/platform-tools/`，该目录被 Git 忽略。启动时通过 `ADBUTILS_ADB_PATH` 显式指向这个绝对路径，项目自身的 adb 调用与 adbutils 共用同一个二进制，不会互相抢 5037 端口；PATH 保持用户原样，不受影响。手动放置已有 adb 时须连同同目录 DLL 一起，否则绝对路径调用会失败。PATH 里已有 adb 时直接复用，显式设置 `ADBUTILS_ADB_PATH` 优先级最高。HarmonyOS 驱动接口需要另行提供 HDC，当前便携包不包含 HDC。
 
 ```powershell
 git clone https://github.com/h0ll0w-AkuZr0guY/MiaoTask.git

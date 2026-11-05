@@ -8,13 +8,14 @@ from pathlib import Path
 import sys
 
 # Use the local tools copy for source development and bundled tools when frozen.
+# Every ADB caller (our own subprocesses and adbutils) reads ADBUTILS_ADB_PATH,
+# so one absolute path keeps them on the same binary. PATH is deliberately left
+# untouched: changing it would also redirect unrelated child processes.
 tools_dir = (Path(sys._MEIPASS) / 'shared/tools' if getattr(sys, 'frozen', False)
              else Path(__file__).resolve().parents[1] / 'build/vendor/platform-tools')
-if tools_dir.is_dir():
-    os.environ['PATH'] = str(tools_dir) + os.pathsep + os.environ.get('PATH', '')
-    adb = tools_dir / 'adb.exe'
-    if adb.exists():
-        os.environ['ADBUTILS_ADB_PATH'] = str(adb)
+adb = tools_dir / ('adb.exe' if os.name == 'nt' else 'adb')
+if adb.is_file():
+    os.environ.setdefault('ADBUTILS_ADB_PATH', str(adb.resolve()))
 
 
 def main():
@@ -104,7 +105,7 @@ def main():
 
 def launch():
     from backend.core.device.adb_lifecycle import OwnedAdb
-    owned_adb = OwnedAdb(adb) if tools_dir.is_dir() and adb.exists() else None
+    owned_adb = OwnedAdb(adb) if adb.is_file() else None
     try:
         main()
     except Exception:

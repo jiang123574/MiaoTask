@@ -170,6 +170,44 @@ class AdbTransportTests(unittest.TestCase):
                 self.assertEqual(transport.resolve_adb_binary(), str(executable.resolve()))
                 which.assert_not_called()
 
+    def test_source_tree_adb_copy_is_used_without_touching_path(self):
+        with tempfile.TemporaryDirectory() as folder:
+            local = Path(folder) / transport.ADB_EXECUTABLE
+            local.write_bytes(b'test-executable')
+            before = os.environ.get('PATH')
+            with patch.dict(os.environ, {'ADBUTILS_ADB_PATH': ''}), patch.object(
+                    transport, 'local_adb_binary', return_value=local), patch.object(
+                    transport.shutil, 'which', return_value='different-adb') as which:
+                self.assertEqual(transport.resolve_adb_binary(), str(local.resolve()))
+                which.assert_not_called()
+            self.assertEqual(os.environ.get('PATH'), before)
+
+    def test_without_local_copy_system_adb_is_still_reused(self):
+        with tempfile.TemporaryDirectory() as folder:
+            absent = Path(folder) / 'missing' / transport.ADB_EXECUTABLE
+            with patch.dict(os.environ, {'ADBUTILS_ADB_PATH': ''}), patch.object(
+                    transport, 'local_adb_binary', return_value=absent), patch.object(
+                    transport.shutil, 'which', return_value='system-adb'):
+                self.assertEqual(transport.resolve_adb_binary(), str(Path('system-adb').resolve()))
+
+    def test_no_adb_anywhere_points_at_the_local_copy_instead_of_path_setup(self):
+        with tempfile.TemporaryDirectory() as folder:
+            absent = Path(folder) / 'missing' / transport.ADB_EXECUTABLE
+            with patch.dict(os.environ, {'ADBUTILS_ADB_PATH': ''}), patch.object(
+                    transport, 'local_adb_binary', return_value=absent), patch.object(
+                    transport.shutil, 'which', return_value=None):
+                with self.assertRaisesRegex(transport.AndroidConnectionError, 'fetch_platform_tools.py'):
+                    transport.resolve_adb_binary()
+
+
+class SourceLaunchAdbTests(unittest.TestCase):
+    def test_launcher_keeps_path_untouched_when_reloaded(self):
+        import importlib
+        import backend.main as launcher
+        before = os.environ.get('PATH')
+        importlib.reload(launcher)
+        self.assertEqual(os.environ.get('PATH'), before)
+
 
 class PanelDiscoveryTests(unittest.TestCase):
     def test_panel_uses_shared_android_helper_and_keeps_unauthorized_selectable(self):
