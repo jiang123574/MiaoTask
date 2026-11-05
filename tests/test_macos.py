@@ -94,6 +94,16 @@ class DesktopIntegrationTests(unittest.TestCase):
 
 
 class PosixAdbCleanupTests(unittest.TestCase):
+    def test_binary_resolution_survives_patched_os_name(self):
+        # Patching os.name must not make OwnedAdb depend on pathlib choosing
+        # PosixPath, which is unavailable on Windows CI.
+        with patch.object(adb_lifecycle.os, 'name', 'posix'), \
+                patch.object(adb_lifecycle.subprocess, 'run',
+                             return_value=subprocess.CompletedProcess([], 0, '', '')):
+            owned = OwnedAdb('tools/adb')
+        self.assertTrue(os.path.isabs(owned.binary))
+        self.assertEqual(os.path.basename(owned.binary), 'adb')
+
     def test_posix_cleanup_only_terminates_new_exact_binary_processes(self):
         with patch.object(adb_lifecycle.os, 'name', 'posix'), \
                 patch.object(OwnedAdb, '_processes', side_effect=[{(1, 'a')}, {(1, 'a'), (2, 'b')}]), \

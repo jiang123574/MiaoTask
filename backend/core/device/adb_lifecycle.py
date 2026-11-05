@@ -2,14 +2,15 @@
 import json
 import logging
 import os
-from pathlib import Path
 import signal
 import subprocess
 
 
 class OwnedAdb:
     def __init__(self, binary):
-        self.binary = str(Path(binary).resolve())
+        # os.path.realpath keeps this independent of pathlib's os.name-based
+        # Path class selection, so POSIX lifecycle tests also run on Windows.
+        self.binary = os.path.realpath(str(binary))
         self.before = self._processes()
 
     def _powershell(self, script):
