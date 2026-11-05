@@ -188,17 +188,14 @@ class ActivityDescriptionTests(unittest.TestCase):
         registry=Registry(Path(__file__).resolve().parents[1]/'backend/app').discover()
         described=[(app['id'],activity['id'],activity['description']) for app in registry.catalog()
                    for activity in app['activities'] if activity.get('description')]
-        # 三方活动各自提供说明：上游东东农场、月月赚，以及 fork 的 JOY游记
+        # 上游两个活动各自提供说明：东东农场、月月赚
         self.assertCountEqual([(a,b) for a,b,_ in described],
-                              [('jd','dongdong_farm'),('jd','joy-travel'),
-                               ('zfb','yueyuezhuan')])
+                              [('jd','dongdong_farm'),('zfb','yueyuezhuan')])
         transfer=next(text for a,b,text in described if (a,b)==('zfb','yueyuezhuan'))
         self.assertIn('这是一款转账红包（非支付减免红包）',transfer)
         self.assertIn('积少成多',transfer)
         farm=next(text for a,b,text in described if (a,b)==('jd','dongdong_farm'))
         self.assertIn('东东农场',farm)
-        joy=next(text for a,b,text in described if (a,b)==('jd','joy-travel'))
-        self.assertIn('JOY 游记',joy)
 
 
 class CatalogOpeningLatencyTests(unittest.TestCase):
