@@ -4,7 +4,7 @@
 
 从 [Releases](https://github.com/h0ll0w-AkuZr0guY/MiaoTask/releases/latest) 的 Assets 下载 Windows x64 ZIP，完整解压后运行 `MiaoTask.exe`，不要移走 `_internal/`。`Source code` 是源码包。
 
-macOS 可源码运行：安装 Python 3.13 与 ADB（`brew install python@3.13 android-platform-tools`），在源码目录运行 `./start.command`；也可用 `scripts/package_macos.py` 自行打包，包内双击 `MiaoTask.command` 启动。macOS 没有托盘，服务跟随终端窗口。
+macOS 可源码运行：安装 Python 3.13（`brew install python@3.13`），首次执行 `python3 scripts/fetch_platform_tools.py` 把官方 ADB 下载到源码目录（无需系统安装或改 PATH），再运行 `./start.command`；PATH 里已有 adb 时直接复用，也可用 `ADBUTILS_ADB_PATH` 指定。还可用 `scripts/package_macos.py` 自行打包，包内双击 `MiaoTask.command` 启动。macOS 没有托盘，服务跟随终端窗口。
 
 v0.1.4 发布 ZIP 预装淘宝五项活动与支付宝月月赚，更新可在「活动中心」从所选官方分支获取。框架包含设备控制、网页与运行环境；活动源码与框架分开保存，后续可独立更新。
 

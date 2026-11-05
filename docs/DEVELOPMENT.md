@@ -4,7 +4,7 @@
 
 ## 源码运行
 
-使用 Python 3.13，准备可用的 Android ADB；手机保持解锁并允许调试。HarmonyOS 驱动接口需要另行提供 HDC，当前便携包不包含 HDC。
+使用 Python 3.13，准备可用的 Android ADB；手机保持解锁并允许调试。ADB 无需安装到系统、也无需加入 PATH：本机没有 ADB 时执行一次 `python scripts/fetch_platform_tools.py`，官方 platform-tools（Windows 下含 `adb.exe` 运行所需的 DLL）会下载到 `build/vendor/platform-tools/`，该目录被 Git 忽略。启动时通过 `ADBUTILS_ADB_PATH` 显式指向这个绝对路径，项目自身的 adb 调用与 adbutils 共用同一个二进制，不会互相抢 5037 端口；PATH 保持用户原样，不受影响。手动放置已有 adb 时须连同同目录 DLL 一起，否则绝对路径调用会失败。PATH 里已有 adb 时直接复用，显式设置 `ADBUTILS_ADB_PATH` 优先级最高。HarmonyOS 驱动接口需要另行提供 HDC，当前便携包不包含 HDC。
 
 ```powershell
 git clone https://github.com/h0ll0w-AkuZr0guY/MiaoTask.git
@@ -18,19 +18,19 @@ Windows 也可用 `start.bat`。网页无需 npm 或额外构建步骤。
 
 ### macOS 源码运行
 
-macOS 使用 Homebrew 安装的 Python 3.13 与 Android platform-tools，命令与 Windows 等价：
+macOS 使用 Homebrew 安装的 Python 3.13，ADB 与 Windows 一样由脚本准备到源码目录，无需系统安装或加入 PATH：
 
 ```bash
-brew install python@3.13 android-platform-tools
+brew install python@3.13
 git clone https://github.com/h0ll0w-AkuZr0guY/MiaoTask.git
 cd MiaoTask
 python3.13 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python scripts/fetch_platform_tools.py --platform darwin   # 可选：固定一份 ADB
+.venv/bin/python scripts/fetch_platform_tools.py   # 自动选择 darwin 平台，下载本地 ADB 副本
 ./start.command
 ```
 
-`start.command` 可双击，也可加参数运行（例如 `./start.command --port 8766 --no-browser`）。macOS 不提供 Windows 托盘：任务与终端同生命周期，关闭终端或按 `Ctrl+C` 即停止；日记录、诊断和公共设置保存在 `~/Library/Application Support/MiaoTask`（可用 `MIAO_DATA_DIR` 覆盖）。只有一份终端时，重复启动会复用已运行的控制台并打开浏览器。
+`start.command` 可双击，也可加参数运行（例如 `./start.command --port 8766 --no-browser`）。源码运行时优先使用 `build/vendor/platform-tools/adb` 的绝对路径，PATH 保持原样；显式设置 `ADBUTILS_ADB_PATH` 优先级最高，本机 PATH 中已有 adb 时也可直接复用。macOS 不提供 Windows 托盘：任务与终端同生命周期，关闭终端或按 `Ctrl+C` 即停止；日记录、诊断和公共设置保存在 `~/Library/Application Support/MiaoTask`（可用 `MIAO_DATA_DIR` 覆盖）。只有一份终端时，重复启动会复用已运行的控制台并打开浏览器。
 
 macOS 打包使用 `scripts/package_macos.py`，步骤与验证见[构建文档](BUILDING.md#macos-打包)。MuMu 自动发现仅支持 Windows；macOS 上模拟器会出现在普通 ADB 设备列表，或按 ADB 地址手动连接。Linux 可复用同一启动脚本与 XDG 数据目录，但本仓库未单独验证。
 

@@ -4,11 +4,11 @@ import importlib.util
 import json
 from pathlib import Path
 import platform
-import shutil
 import subprocess
 import sys
 
 from backend.core.runtime import assets_dir, version
+from backend.core.device.discovery import resolve_adb_binary
 
 # onnxruntime-gpu 提供同名 onnxruntime 模块，但发行包元数据名不同。
 _DISTRIBUTION_ALIASES = {'onnxruntime': ('onnxruntime', 'onnxruntime-gpu')}
@@ -84,9 +84,7 @@ def self_test(output, *, activity_package=None, activity_sha256=None):
     except Exception as exc:
         errors.append(f'Registry: {type(exc).__name__}: {exc}')
     try:
-        adb = shutil.which('adb')
-        if not adb:
-            raise RuntimeError('ADB not found')
+        adb = resolve_adb_binary()
         result = subprocess.run([adb, 'version'], capture_output=True, text=True, timeout=10,
                                 creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         checks['adb_bundled'] = Path(adb).is_relative_to(assets_dir()) if getattr(sys, 'frozen', False) else True
