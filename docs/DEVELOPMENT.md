@@ -30,7 +30,7 @@ python3.13 -m venv .venv
 ./start.command
 ```
 
-`start.command` 可双击，也可加参数运行（例如 `./start.command --port 8766 --no-browser`）。源码运行时优先使用 `build/vendor/platform-tools/adb` 的绝对路径，PATH 保持原样；显式设置 `ADBUTILS_ADB_PATH` 优先级最高，本机 PATH 中已有 adb 时也可直接复用。macOS 不提供 Windows 托盘：任务与终端同生命周期，关闭终端或按 `Ctrl+C` 即停止；日记录、诊断和公共设置保存在 `~/Library/Application Support/MiaoTask`（可用 `MIAO_DATA_DIR` 覆盖）。只有一份终端时，重复启动会复用已运行的控制台并打开浏览器。
+`start.command` 可双击，也可加参数运行（例如 `./start.command --port 8766 --no-browser`）。源码运行时优先使用 `build/vendor/platform-tools/adb` 的绝对路径，PATH 保持原样；显式设置 `ADBUTILS_ADB_PATH` 优先级最高，本机 PATH 中已有 adb 时也可直接复用。macOS 不提供 Windows 托盘：任务与终端同生命周期，关闭终端或按 `Ctrl+C` 即停止；源码运行时日记录、诊断与日志写在仓库 `runtime/`，公共设置写在 `~/Library/Application Support/MiaoTask`（打包版两者都在该目录），`MIAO_DATA_DIR` 可统一覆盖。只有一份终端时，重复启动会复用已运行的控制台并打开浏览器。
 
 macOS 打包使用 `scripts/package_macos.py`，步骤与验证见[构建文档](BUILDING.md#macos-打包)。MuMu 自动发现仅支持 Windows；macOS 上模拟器会出现在普通 ADB 设备列表，或按 ADB 地址手动连接。Linux 可复用同一启动脚本与 XDG 数据目录，但本仓库未单独验证。
 

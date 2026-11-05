@@ -56,7 +56,7 @@
 
 在线更新需要电脑访问官方资源源。每次打开活动中心检查一次，之后可手动刷新；API 限流时尝试备用通道。安装过的活动保留恢复包，卸载后可点「离线恢复」；预装项另有随包恢复基线。已有内置活动的旧包仍可照常使用，升级时完整解压新框架。
 
-**macOS**：可以源码运行，也可用本仓库的 macOS 打包脚本生成自包含目录（见[构建文档](docs/BUILDING.md#macos-打包)）。安装 Python 3.13 与 ADB（`brew install python@3.13 android-platform-tools`），在仓库目录运行 `./start.command`。macOS 没有托盘图标，任务随终端运行：请保留终端窗口，按 `Ctrl+C` 停止；日记录与诊断保存在 `~/Library/Application Support/MiaoTask`。确认 USB 调试授权、无线配对与 WLAN 访问均与 Windows 相同。开发环境步骤见[开发指南](docs/DEVELOPMENT.md#macos-源码运行)。
+**macOS**：可以源码运行，也可用本仓库的 macOS 打包脚本生成自包含目录（见[构建文档](docs/BUILDING.md#macos-打包)）。安装 Python 3.13（`brew install python@3.13`），首次在仓库目录执行 `python3 scripts/fetch_platform_tools.py` 把官方 ADB 下载到源码目录（无需系统安装或改 PATH），再运行 `./start.command`。macOS 没有托盘图标，任务随终端运行：请保留终端窗口，按 `Ctrl+C` 停止；源码运行时的日记录、诊断与日志在仓库 `runtime/`，打包版在 `~/Library/Application Support/MiaoTask`，公共设置始终在该目录（`MIAO_DATA_DIR` 可统一覆盖）。确认 USB 调试授权、无线配对与 WLAN 访问均与 Windows 相同。开发环境步骤见[开发指南](docs/DEVELOPMENT.md#macos-源码运行)。
 
 可选GPU加速：[CUDA扩展 v1.0 独立下载](https://github.com/h0ll0w-AkuZr0guY/MiaoTask/releases/tag/MiaoTask-CUDA-v1.0)。它不包含主程序，CPU基础包无需安装扩展即可运行。先退出托盘服务，将扩展的 `runtime_plugins/` 放到 `MiaoTask.exe` 同级，重启后在高级选项选择自动或CUDA。无需安装Torch，不覆盖 `_internal/`；更新框架时可迁移兼容的扩展目录。详见[使用条件、安装与回退](docs/USAGE.md#安装可选cuda扩展)。
 
