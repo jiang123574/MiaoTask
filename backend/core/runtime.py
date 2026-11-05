@@ -15,12 +15,30 @@ def assets_dir():
     return Path(getattr(sys, '_MEIPASS', ROOT))
 
 
+def user_data_root():
+    """Per-user writable root shared by records and preferences.
+
+    ``LOCALAPPDATA`` stays authoritative when set so portable Windows layouts,
+    tests and existing installations keep their location. macOS follows its
+    Application Support convention; other systems use the XDG data directory.
+    """
+    local = os.environ.get('LOCALAPPDATA')
+    if local:
+        return Path(local) / 'MiaoTask'
+    if sys.platform == 'darwin':
+        return Path.home() / 'Library' / 'Application Support' / 'MiaoTask'
+    if os.name == 'nt':
+        return Path.home() / 'MiaoTask'
+    xdg = os.environ.get('XDG_DATA_HOME')
+    return (Path(xdg) if xdg else Path.home() / '.local' / 'share') / 'MiaoTask'
+
+
 def data_dir():
     override = os.environ.get('MIAO_DATA_DIR')
     if override:
         path = Path(override).expanduser().resolve()
     elif getattr(sys, 'frozen', False):
-        path = Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'MiaoTask'
+        path = user_data_root()
     else:
         path = ROOT / 'runtime'
     path.mkdir(parents=True, exist_ok=True)

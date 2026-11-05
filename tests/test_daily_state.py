@@ -598,6 +598,7 @@ class FrameworkPreferencesTests(unittest.TestCase):
         self.assertEqual(writes[-3:], [['settings','put','system','screen_brightness','128'], ['settings','put','system','screen_brightness_mode','1'], ['cmd','media_session','volume','--stream','3','--set','7']])
         self.assertEqual(volume[0], 7)
 
+    @unittest.skipUnless(os.name == 'nt', 'Windows process ownership uses PowerShell')
     def test_adb_cleanup_only_new_matching_process(self):
         with patch.object(OwnedAdb, '_processes', side_effect=[{(1, '10')}, {(1, '10'), (2, '20')}]), patch.object(OwnedAdb, '_powershell') as execute:
             OwnedAdb('adb.exe').close()
@@ -605,6 +606,7 @@ class FrameworkPreferencesTests(unittest.TestCase):
             self.assertIn('ProcessId=2', execute.call_args.args[0])
             self.assertIn("-eq '20'", execute.call_args.args[0])
 
+    @unittest.skipUnless(os.name == 'nt', 'Windows process ownership uses PowerShell')
     def test_unknown_adb_ownership_never_kills(self):
         with patch.object(OwnedAdb, '_processes', side_effect=[None, {(2, '20')}]), patch.object(OwnedAdb, '_powershell') as execute:
             OwnedAdb('adb.exe').close()

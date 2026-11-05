@@ -92,6 +92,21 @@ python -m venv build/release-env
 
 包内有 `MiaoTask.exe`、`_internal/`、可选的独立 `activities/` 源码目录、使用与风险文档、许可和第三方声明、`build-manifest.json` 及 `self-test.json`。`bundle-policy.json` 记录框架/完整包模式。
 
+## macOS 打包
+
+macOS 使用 `scripts/package_macos.py` 生成同源代码的一文件夹应用；不包含 Windows 托盘，终端即服务生命周期。准备 Python 3.13、构建依赖和官方 darwin platform-tools：
+
+```bash
+python3.13 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt -r requirements-build.txt
+.venv/bin/python scripts/fetch_platform_tools.py --platform darwin
+.venv/bin/python scripts/package_macos.py --adb-dir build/vendor/platform-tools
+```
+
+默认要求干净提交；本地未提交候选加 `--preview`，清单标记预览并允许未提交源码；`--include-activities` 生成内置活动的离线兼容包。产物为 `dist/MiaoTask-vX-macos-<arm64|x64>.zip`、同名 `.sha256` 和包内 `build-manifest.json`。包根 `MiaoTask.command` 可双击启动（保留终端窗口，按 `Ctrl+C` 停止），`_internal/` 不可移走，活动源码在包旁 `activities/`。构建脚本把 `PYINSTALLER_CONFIG_DIR` 指向被忽略的 `build/pyinstaller-cache`，打包后复用 `scripts/smoke_packaged.py` 的冻结自检：离线 OCR、HTTP、图标、重复启动、退出与活动导入。
+
+macOS 包使用官方 darwin ADB，架构与构建机一致；不提供 CUDA 扩展，OCR 使用 CPU（可用时列出 CoreML 执行器）。代码签名与公证不在本仓库流程内处理，对外分发前需自行确认 Gatekeeper 要求。
+
 ## 检查实际 ZIP 与活动获取
 
 完整解压到新目录，保留 `_internal/`，不要混用新旧运行库。执行 `scripts/smoke_packaged.py <exe路径>` 可在 PATH 中移除 Python/ADB 后检查内置工具、OCR、HTTP、图标、重复启动和退出；活动样本也需在真正的冻结 exe 中安装、导入工厂，避免只验证源码环境。

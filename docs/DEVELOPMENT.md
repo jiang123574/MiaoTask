@@ -14,7 +14,27 @@ python -m venv .venv
 .\.venv\Scripts\python.exe main.py
 ```
 
-Windows 也可用 `start.bat`。网页无需 npm 或额外构建步骤。命令行参数示例：
+Windows 也可用 `start.bat`。网页无需 npm 或额外构建步骤。
+
+### macOS 源码运行
+
+macOS 使用 Homebrew 安装的 Python 3.13 与 Android platform-tools，命令与 Windows 等价：
+
+```bash
+brew install python@3.13 android-platform-tools
+git clone https://github.com/h0ll0w-AkuZr0guY/MiaoTask.git
+cd MiaoTask
+python3.13 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python scripts/fetch_platform_tools.py --platform darwin   # 可选：固定一份 ADB
+./start.command
+```
+
+`start.command` 可双击，也可加参数运行（例如 `./start.command --port 8766 --no-browser`）。macOS 不提供 Windows 托盘：任务与终端同生命周期，关闭终端或按 `Ctrl+C` 即停止；日记录、诊断和公共设置保存在 `~/Library/Application Support/MiaoTask`（可用 `MIAO_DATA_DIR` 覆盖）。只有一份终端时，重复启动会复用已运行的控制台并打开浏览器。
+
+macOS 打包使用 `scripts/package_macos.py`，步骤与验证见[构建文档](BUILDING.md#macos-打包)。MuMu 自动发现仅支持 Windows；macOS 上模拟器会出现在普通 ADB 设备列表，或按 ADB 地址手动连接。Linux 可复用同一启动脚本与 XDG 数据目录，但本仓库未单独验证。
+
+命令行参数示例：
 
 源码运行仍直接发现仓库内活动。便携构建按活动配置的bundle_by_default预装，亦可显式生成纯框架；活动中心从官方 GitHub main 按需获取活动源码；开发与构建验证方法见[构建文档](BUILDING.md)。无需为每次活动规则更新发布框架或额外的活动 Release。
 
@@ -143,11 +163,11 @@ META = ActivityMeta(
 
 实例由包名与 Android 用户空间共同确定。启动、停止和恢复限定用户，操作前核对焦点窗口。启动转场未确认前台时，允许再次唤起同一实例一次，不重复强停；仍无法确认或操作途中身份不符时停止。队列串行执行，记录按实例隔离，不读取账号标识。
 
-HTTP 仅绑定本机，写操作校验 Host、Origin 与会话令牌。每台设备一个独立工作线程，DeviceHub 在同一服务内并行调度；预览通过各自 I/O 锁读取；新截图按序替换，短时缓存遇到操作或前台变化失效，失败现场使用新帧。无网页访问时停止额外预览，Windows 托盘负责重新打开和退出。
+HTTP 仅绑定本机，写操作校验 Host、Origin 与会话令牌。每台设备一个独立工作线程，DeviceHub 在同一服务内并行调度；预览通过各自 I/O 锁读取；新截图按序替换，短时缓存遇到操作或前台变化失效，失败现场使用新帧。无网页访问时停止额外预览；Windows 托盘负责重新打开和退出，其他系统由终端窗口与 `Ctrl+C` 控制。
 
 ## 数据与接口
 
-源码数据默认位于 `runtime/`，便携版位于 `%LOCALAPPDATA%\MiaoTask`；`MIAO_DATA_DIR` 可覆盖位置。记录使用 `apps/<app>/activities/<activity>/daily/<date>/<device_hash>/instances/<instance_hash>/`。原活动首次接续旧 daily 记录，保留旧文件，其他活动不导入。
+源码数据默认位于 `runtime/`，便携版位于 `%LOCALAPPDATA%\MiaoTask`（macOS 为 `~/Library/Application Support/MiaoTask`）；`MIAO_DATA_DIR` 可覆盖位置。记录使用 `apps/<app>/activities/<activity>/daily/<date>/<device_hash>/instances/<instance_hash>/`。原活动首次接续旧 daily 记录，保留旧文件，其他活动不导入。
 
 | 数据 | 含义 |
 | --- | --- |

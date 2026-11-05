@@ -1012,7 +1012,9 @@ def serve(port=8765, open_browser=True, config=None, port_file=None, app=None, a
     if port_file:
         Path(port_file).write_text(json.dumps({'url': url}), encoding='utf-8')
     if sys.stdout is not None:
-        print(f'MiaoTask 已启动：{url}\n按 Ctrl+C 退出。')
+        # Windows keeps running behind the tray; other systems need the terminal.
+        note = '\n关闭本终端会同时结束后台任务。' if sys.platform != 'win32' else ''
+        print(f'MiaoTask 已启动：{url}\n按 Ctrl+C 停止服务。{note}')
     from backend.core.service.tray import WindowsTray
     def exit_service():
         controller.stop_all()

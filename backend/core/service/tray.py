@@ -1,4 +1,8 @@
-"""Small native Windows tray; no extra GUI runtime or polling loop."""
+"""Small native Windows tray; no extra GUI runtime or polling loop.
+
+Other systems keep the service in the terminal, so ``start()`` reports False
+and the panel opens the browser instead of a tray icon.
+"""
 import ctypes
 from ctypes import wintypes as w
 import os

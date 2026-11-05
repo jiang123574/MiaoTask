@@ -27,7 +27,11 @@ def discover_emulators():
     except (OSError,subprocess.SubprocessError):
         return dict(devices=[], errors=['无法定位 MuMu 安装目录；可手动填写其 ADB 地址，或配置 MIAO_MUMU_CLI'])
     if not binary:
-        return dict(devices=[], errors=['未找到运行中的 MuMu；可先启动模拟器，或手动填写其 ADB 地址'])
+        # MuMu's vendor CLI is Windows-only; other emulators already appear in
+        # the normal ADB device list, so only manual addresses remain here.
+        message = ('当前系统不自动发现 MuMu 实例；模拟器可先启动，再用 ADB 地址手动连接'
+                   if os.name != 'nt' else '未找到运行中的 MuMu；可先启动模拟器，或手动填写其 ADB 地址')
+        return dict(devices=[], errors=[message])
     try:
         result = subprocess.run([binary,'info','--vmindex','all'], capture_output=True,
                                 encoding='utf-8', errors='replace', timeout=8,

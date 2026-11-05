@@ -12,7 +12,7 @@ ADB / 设备自动化驱动可以操作手机，USB 调试不是只读屏幕权�
 
 控制台只监听本机地址，截图和 OCR 在本机处理，不发送给远程识别服务。程序会读取设备标识、前台应用及任务页面，用于连接和恢复。
 
-便携版默认写入 `%LOCALAPPDATA%\MiaoTask`，源码模式写入 `runtime/`；`MIAO_DATA_DIR` 可指定其他位置。记录位于 `apps/<应用>/activities/<活动>/daily/YYYY-MM-DD/<设备哈希>/instances/<实例哈希>/`，按设备、活动和实例独立保存。原淘宝活动首次接续旧 `daily/` 布局，旧文件保留。
+便携版默认写入 `%LOCALAPPDATA%\MiaoTask`，macOS 写入 `~/Library/Application Support/MiaoTask`，源码模式写入 `runtime/`；`MIAO_DATA_DIR` 可指定其他位置。记录位于 `apps/<应用>/activities/<活动>/daily/YYYY-MM-DD/<设备哈希>/instances/<实例哈希>/`，按设备、活动和实例独立保存。原淘宝活动首次接续旧 `daily/` 布局，旧文件保留。
 
 活动源码和安装记录独立放在 exe 旁的 `activities/`，目录只读时使用上述用户数据根下的 `activities/`；活动中心显示实际位置。活动含可执行 Python 代码，请使用官方来源并审阅自己的修改。活动中心从 GitHub 获取代码，不会上传设备记录或截图。
 

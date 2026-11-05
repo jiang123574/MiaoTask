@@ -17,22 +17,25 @@ class AndroidConnectionError(ConnectionError):
     """A connection needs a cable, a phone authorization, or device selection."""
 
 
+ADB_EXECUTABLE = 'adb.exe' if os.name == 'nt' else 'adb'
+
+
 def resolve_adb_binary():
     """Use the same bundled/explicit executable as adbutils, then the PATH one."""
     explicit = os.environ.get('ADBUTILS_ADB_PATH')
     if explicit:
         candidate = Path(explicit).expanduser()
         if not candidate.is_file():
-            raise AndroidConnectionError('配置的 ADB 程序不存在，请重新解压完整便携包')
+            raise AndroidConnectionError('配置的 ADB 程序不存在，请检查 ADB 路径或重新安装完整版本')
         return str(candidate.resolve())
     if getattr(sys, 'frozen', False):
-        candidate = Path(sys._MEIPASS) / 'shared' / 'tools' / 'adb.exe'
+        candidate = Path(sys._MEIPASS) / 'shared' / 'tools' / ADB_EXECUTABLE
         if not candidate.is_file():
-            raise AndroidConnectionError('便携包缺少 ADB，请完整解压后再运行')
+            raise AndroidConnectionError('安装包缺少 ADB，请重新安装完整版本')
         return str(candidate.resolve())
     candidate = shutil.which('adb')
     if not candidate:
-        raise AndroidConnectionError('未找到 ADB，请使用完整便携包或将 platform-tools 加入 PATH')
+        raise AndroidConnectionError('未找到 ADB，请使用完整安装包或将 platform-tools 加入 PATH')
     return str(Path(candidate).resolve())
 
 

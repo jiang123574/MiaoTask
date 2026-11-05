@@ -10,9 +10,9 @@ import sys
 # Use the local tools copy for source development and bundled tools when frozen.
 tools_dir = (Path(sys._MEIPASS) / 'shared/tools' if getattr(sys, 'frozen', False)
              else Path(__file__).resolve().parents[1] / 'build/vendor/platform-tools')
+adb = tools_dir / ('adb.exe' if os.name == 'nt' else 'adb')
 if tools_dir.is_dir():
     os.environ['PATH'] = str(tools_dir) + os.pathsep + os.environ.get('PATH', '')
-    adb = tools_dir / 'adb.exe'
     if adb.exists():
         os.environ['ADBUTILS_ADB_PATH'] = str(adb)
 
@@ -110,9 +110,9 @@ def launch():
     except Exception:
         logging.exception('启动失败')
         if getattr(sys, 'frozen', False):
-            import ctypes
             from backend.core.runtime import data_dir
-            ctypes.windll.user32.MessageBoxW(0, f'启动失败，请查看日志：\n{data_dir() / "application.log"}', '喵任务', 16)
+            from backend.core.service.desktop import show_error_dialog
+            show_error_dialog('喵任务', f'启动失败，请查看日志：\n{data_dir() / "application.log"}')
         raise
     finally:
         if owned_adb is not None:

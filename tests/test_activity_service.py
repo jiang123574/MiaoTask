@@ -129,7 +129,7 @@ class ActivityServiceTests(unittest.TestCase):
     def test_activity_folder_is_visible_and_opening_requires_token_and_ignores_client_path(self):
         snapshot = self.get('/api/plugins')
         self.assertEqual(Path(snapshot['activities_dir']), self.hub.plugin_manager.root)
-        with patch('os.startfile', create=True) as opener:
+        with patch('backend.core.service.desktop.open_path') as opener:
             with self.assertRaises(HTTPError) as denied:
                 self.post('/api/plugins/open-folder', {}, token='bad')
             self.assertEqual(denied.exception.code, 403)
