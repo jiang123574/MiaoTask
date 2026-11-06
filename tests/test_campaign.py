@@ -14,6 +14,7 @@ from backend.core.device.adapter import DeviceAdapter
 from backend.core.device.instances import AppInstance, InstanceMismatch
 from backend.core.device.screen import Screen, ScreenReader
 from backend.app.taobao.activities.double11.tasks import TextNode, is_task_list, normalize, parse_tasks
+from backend.app.taobao.utils.daily import sanitize_storefront
 from backend.core.execution.gestures import BrowseGestures
 from backend.core.service.tray import WindowsTray
 from backend.core.service import notify as notifications
@@ -1278,6 +1279,34 @@ class RunnerTests(unittest.TestCase):
         self.assertNotEqual(first.key, replacement.key)
         self.assertEqual(r.failures[(replacement.key, 0)], 0)
 
+    def test_after_success_refresh_requires_fresh_frame_and_recovers(self):
+        r = self.runner()
+        fresh = task_screen()
+        r.read = Mock(return_value=fresh)
+        r.guard = Mock()
+        r.is_task_list = Mock(return_value=False)
+        recovered = task_screen(1)
+        r.recover = Mock(return_value=recovered)
+        r.reader.require_after = Mock()
+        self.assertIs(r._refresh_after_success(), recovered)
+        r.reader.require_after.assert_called_once()
+        r.read.assert_called_once_with(force_ocr=True)
+        r.guard.assert_called_once_with(fresh)
+        r.recover.assert_called_once()
+
+    def test_success_refresh_retains_safety_and_bounds_recovery(self):
+        from backend.core.errors import Stopped
+        r = self.runner()
+        r.read = Mock(side_effect=TimeoutError('synthetic'))
+        task = r.tasks(task_screen())[0]
+        r.recover_task = Mock(return_value=task_screen())
+        self.assertIs(r._refresh_after_success(task), r.recover_task.return_value)
+        r.recover_task.assert_called_once_with(task)
+        r.recover_task.reset_mock()
+        r.read.side_effect = Stopped()
+        with self.assertRaises(Stopped): r._refresh_after_success(task)
+        r.recover_task.assert_not_called()
+
     def test_new_offer_is_executed_in_the_same_run(self):
         r = self.runner()
         r.config['skip_task_keywords'] = []  # exercise dynamic offers, independent of text policy
@@ -1288,9 +1317,10 @@ class RunnerTests(unittest.TestCase):
         done = self.offer_screen('去支付宝抽1000元红包', 1, 50)
         r.ensure_list = Mock(return_value=first)
         r.execute = Mock(side_effect=[(replacement, False, False), (done, False, True)])
-        r.read = Mock(return_value=done)
+        r.read = Mock(side_effect=lambda **kwargs: replacement if r.execute.call_count == 1 else done)
         result = r.run()
         self.assertEqual(result['completed'], 2)
+        self.assertEqual(sum(bool(call.kwargs.get('force_ocr')) for call in r.read.call_args_list), 2)
         self.assertEqual([call.args[0].title for call in r.execute.call_args_list],
                          ['领闪购红包下单直接省', '去支付宝抽1000元红包'])
 
@@ -1386,7 +1416,12 @@ class RunnerTests(unittest.TestCase):
         r.config.update(max_tasks=10)
         r.ensure_list = Mock(return_value=task_screen(0))
         advances = iter(range(1, 11))
-        r.execute = Mock(side_effect=lambda *args: (task_screen(next(advances)), False, False))
+        latest = [task_screen(0)]
+        def execute(*args):
+            latest[0] = task_screen(next(advances))
+            return latest[0], False, False
+        r.execute = Mock(side_effect=execute)
+        r.read = Mock(side_effect=lambda **kwargs: latest[0])
         result = r.run()
         self.assertEqual(result['completed'], 10)
         self.assertEqual(result['attempts'], 10)
@@ -1616,6 +1651,29 @@ class RunnerTests(unittest.TestCase):
                        node('直线光轴镀铬空心活塞杆轴承', 700, 640)],
                       1440, 3200, r.origin)
         r.guard(feed)
+
+    def test_product_poster_code_word_is_not_a_security_challenge(self):
+        # 搜索结果页的商品主图上印着“小红书薯币充值 需要验证码?不上号”，
+        # OCR 把这三个字读进来就命中裸词“验证码”，整轮停在一个根本没有
+        # 验证的搜索页上。真机 2026-11-05 12:02 的失败现场就是这个。
+        r = self.runner()
+        feed = Screen([node('浏览10秒可领 20 金币', 30, 120),
+                       node('100', 660, 200),
+                       node('小红书薯币充值', 60, 1760),
+                       node('需要验证码?不上号', 60, 1820),
+                       node('24小时自动秒充秒到！', 60, 1880)],
+                      1440, 3200, r.origin)
+        r.guard(feed)
+        self.assertNotIn('验证码', sanitize_storefront(feed).text)
+
+    def test_real_code_page_still_stops_after_sanitizing(self):
+        # 净化只摘货架文案：真验证页带着“输入/获取验证码”的动作词，必须仍然停。
+        r = self.runner()
+        for label in ['请输入验证码', '获取验证码', '验证码错误，请重新输入']:
+            page = Screen([node(label, 60, 1500)], 1440, 3200, r.origin)
+            self.assertIs(sanitize_storefront(page), page)
+            with self.assertRaises(NeedsAttention):
+                r.guard(page)
 
     def test_stop_is_responsive_while_paused(self):
         control = RunControl()
