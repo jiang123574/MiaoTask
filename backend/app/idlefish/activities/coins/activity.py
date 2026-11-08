@@ -14,6 +14,7 @@
 """
 import hashlib
 import logging
+import random
 import re
 
 from backend.core.config.loader import load_config
@@ -51,6 +52,21 @@ class IdleFishCoinsActivity(EntryPolicy, Activity):
         screen = super().read(**kwargs)
         self.guard(screen)
         return screen
+
+    def _safe_read(self, screen=None, force_ocr=False):
+        """读屏失败时沿用上一屏，不中断当前任务。
+
+        闲鱼活动页是 H5 容器，浏览类任务的商品瀑布流滚得越久节点越多；
+        uiautomator 导出控件树时可能抛出 StackOverflowError（Java 栈溢出，
+        实测 20 秒连续滑动后必现）。这类崩溃只影响「看一眼」这一步，
+        不应该让整个任务作废：返回上一屏，由调用方按「没有完成提示」
+        继续走返回列表与核验流程。
+        """
+        try:
+            return self.read(force_ocr=force_ocr)
+        except Exception as exc:
+            logger.warning('读取屏幕失败，沿用上一屏继续：%s', exc)
+            return screen
 
     # ------------------------------------------------------------------
     # 契约：配置
@@ -224,9 +240,10 @@ class IdleFishCoinsActivity(EntryPolicy, Activity):
         logger.info('点击任务：%s | 按钮=%s | 区域=%s', task.title, fresh.action, fresh.bounds)
         self.click(TextNode(fresh.action, fresh.bounds))
         if task.kind == 'claim':
-            # 领奖按钮响应快，1.2 秒足够；读一屏点掉「获得XX」弹窗就立刻
-            # 交给外层按实际回执与任务进度核验。
-            self.control.wait(1.2)
+            # 「领取奖励」按钮点掉后整行约 3 秒才消失，那是页面自己的刷新，
+            # 不需要脚本反复读屏核验，也不靠「领取成功/奖励已到账」等文案判定。
+            # 点击本身不作为成功证据，交给回执或任务行变化核验。
+            self.control.wait(float(self.config.get('claim_settle_seconds', 0.6)))
             screen = self.read()
             self.guard(screen)
             explicit = bool(screen.find(DONE_PROMPT_RE))
@@ -243,7 +260,7 @@ class IdleFishCoinsActivity(EntryPolicy, Activity):
         if task.kind == 'search':
             # 搜索类：进入搜索页后搜词并浏览
             screen, explicit = self._search_task(screen)
-            return self._claim_ready(task, self._return_to_list()), explicit, False
+            return self._claim_ready(task, self._return_to_list(), explicit=explicit), explicit, False
         if task.kind == 'visit':
             # 跳转类：点「去完成」跳到其它 App，停留几秒后回闲鱼。
             # 回到任务列表后确认该任务是否已变成「领取奖励」/进度+1：
@@ -263,16 +280,20 @@ class IdleFishCoinsActivity(EntryPolicy, Activity):
             screen, explicit = self._video_browse(task.seconds)
         else:
             screen, explicit = self._browse(task.seconds)
-        # 浏览完主动返回任务列表，顺手把变成「领取奖励」的行领掉
-        return self._claim_ready(task, self._return_to_list()), explicit, False
+        # 浏览完主动返回任务列表，顺手把变成「领取奖励」的行领掉。
+        # 把浏览结束时那一屏传进去：读屏刚崩过时不用再读一次整屏。
+        return self._claim_ready(task, self._return_to_list(screen), explicit=explicit), explicit, False
 
-    def _claim_ready(self, task, screen, tries=3):
-        """浏览/点击完成后按钮会从「去完成」变成「领取奖励」，顺手点掉。
+    def _claim_ready(self, task, screen, tries=2, explicit=False):
+        """浏览/跳转完成后顺手领奖：默认只看一拍，页面仍在加载才再看一拍。
 
-        服务端结算有几秒延迟，第一次读往往还是「去完成」，所以查三拍（约 3 秒）；
-        按标题匹配，确保达标后能及时领奖。
+        服务端结算慢时不再原地死等三拍，把领奖交给下一轮扫描（框架给领取类
+        排的优先级最高）；整行消失直接当完成，不再空耗读屏。
         """
-        for _ in range(tries):
+        total = max(1, tries)
+        if screen is None:
+            return screen
+        for index in range(total):
             if not self.is_task_list(screen.nodes):
                 return screen
             row = next((t for t in self.parse_tasks(screen.nodes, screen.width, screen.height)
@@ -281,13 +302,23 @@ class IdleFishCoinsActivity(EntryPolicy, Activity):
                 self._completed_evidence = getattr(self, '_completed_evidence', set()) | {task.key}
                 logger.info('任务已完成，领取奖励：%s', task.title)
                 self.click(TextNode(row.action, row.bounds))
-                self.control.wait(1)
-                self._dismiss_popups(self.read())
-                return self.read()
+                self.control.wait(float(self.config.get('claim_settle_seconds', 0.6)))
+                self._dismiss_popups(self._safe_read(screen))
+                return self._safe_read(screen)
+            if row is None:
+                # 行不在当前视口不能证明浏览完成；保留明确完成回执。
+                if explicit:
+                    self._completed_evidence = getattr(self, '_completed_evidence', set()) | {task.key}
+                logger.info('任务行已消失，后续交给下一轮扫描：%s', task.title)
+                return screen
+            # 只有页面仍在「加载中」才多给一拍，否则直接返回交给下一轮扫描。
+            # 浏览页给过完成提示时，领奖延后不代表本轮失败。
+            if index + 1 >= total or not self.panel_loading(screen):
+                if explicit:
+                    self._completed_evidence = getattr(self, '_completed_evidence', set()) | {task.key}
+                return screen
             self.control.wait(1)
-            screen = self.read()
-        # 累计任务奖励不在这里领：留到 teardown（本轮任务都处理完）统一查，
-        # 避免每个任务后都读屏查一遍。
+            screen = self._safe_read(screen)
         return screen
 
     # ------------------------------------------------------------------
@@ -313,7 +344,7 @@ class IdleFishCoinsActivity(EntryPolicy, Activity):
                 return True
             return bool(explicit) and current.kind == 'claim'
         # 任务行消失：领取类视为已领；浏览类要求页面给过完成提示
-        return False
+        return task.kind == 'claim'
 
     # ------------------------------------------------------------------
     # 生命周期
@@ -321,7 +352,7 @@ class IdleFishCoinsActivity(EntryPolicy, Activity):
     def setup(self):
         # 导航（闲鱼 → 我的 → 闲鱼币 → 赚更多）完全交给框架 ensure_list，
         # 进入后不做任何地图滑动或掷骰子，避免误触。
-        pass
+        self._client_restarted = False
 
     def teardown(self):
         # 只有确实没有待执行任务时才收尾；否则把累计奖励和走步数留到下一轮，
@@ -457,15 +488,81 @@ class IdleFishCoinsActivity(EntryPolicy, Activity):
     def _is_ad_or_video_page(self, screen):
         return self._find(screen, self._AD_VIDEO_RE) is not None
 
-    def _return_to_list(self, screen=None, tries=5, cold_start=False):
-        """任务页结束后主动返回，退回任务列表。
+    def _dismiss_exit_dialogs(self, screen, tries=None):
+        """广告/视频页的退出确认会连弹两次：一直点到不再出现为止。
 
-        浏览/视频/点击/跳转页可能是 H5、独立页或其它 App，到时不会自动回列表：
-        最多按两次返回；遇到小游戏弹窗先点「残忍离开」；已退到大富翁落地页就
-        不再继续退（否则会一路退回桌面），直接重新导航进任务列表。
+        「跳过」和「坚持退出/残忍离开/离开」合并成一组，不区分第几层弹窗；
+        每次点完等一秒再读屏，回到任务列表或找不到按钮就停。
+        """
+        if tries is None:
+            tries = int(self.config.get('exit_dialog_tries', 4))
+        words = [str(w) for w in (list(self.config.get('video_skip_words') or [])
+                                  + list(self.config.get('video_exit_words') or [])) if w]
+        if not words:
+            return screen
+        pattern = '|'.join(re.escape(w) for w in words)
+        for _ in range(max(1, tries)):
+            if self._at_task_list(screen):
+                return screen
+            node = self._find(screen, pattern)
+            if node is None:
+                return screen
+            logger.info('退出确认弹窗，点击「%s」', node.text)
+            self.click(node)
+            self.control.wait(float(self.config.get('exit_dialog_interval', 1.0)))
+            screen = self.read(force_ocr=bool(self.config.get('ocr', False)))
+        return screen
+
+    # ------------------------------------------------------------------
+    # 恢复：框架的一次冷启动预算用完后，补一次强制重启客户端
+    # ------------------------------------------------------------------
+    def recover(self, cold_start=False):
+        """导航恢复；仍失败时杀进程重开闲鱼再试一次。
+
+        框架的 `_navigate_list` 只在「检测到桌面」时才冷启动应用。实际跑下来更
+        常见的是页面停在闲鱼内部的 H5 死页：其实已经在应用里，但怎么退都回不到
+        任务列表，导航把预算耗完就抛「未能自动恢复应用活动任务列表」。这里补一次
+        真正的杀进程重开，把 H5 页面栈清干净再走一遍导航；还是不行才向上抛。
+        """
+        try:
+            return super().recover(cold_start=cold_start)
+        except Exception as exc:
+            if not self._restart_client():
+                raise
+            logger.warning('导航未能恢复，已强制重启闲鱼后重试：%s', exc)
+            return super().recover(cold_start=False)
+
+    def _restart_client(self):
+        """回桌面 → force-stop → 重新启动。每轮只做一次。"""
+        if getattr(self, '_client_restarted', False):
+            return False
+        self._client_restarted = True
+        package = self.origin or 'com.taobao.idlefish'
+        logger.warning('强制重启 %s：先回桌面再强停，避免下次启动恢复旧页面', package)
+        try:
+            self.device.go_home()
+            self.control.wait(0.6)
+            self.device.stop_app(package)
+            self.control.wait(1.2)
+            self.device.start_app(package)
+            self.control.wait(float(self.config.get('restart_settle_seconds', 5.0)))
+        except Exception as exc:
+            logger.warning('强制重启闲鱼失败：%s', exc)
+            return False
+        return True
+
+    def _return_to_list(self, screen=None, tries=5, cold_start=False):
+        """任务页结束后主动返回任务列表。
+
+        广告/视频页先反复点页面内的退出按钮（二次确认也点掉）；小游戏容器交给
+        _exit_game 处理。普通浏览/搜索页只做一次返回动作，等 1～2 秒读一屏，
+        仍不在任务列表就直接恢复导航，不再一轮轮按返回键。
         """
         if screen is None:
-            screen = self.read()
+            screen = self._safe_read()
+        if screen is None:
+            # 读屏完全不可用时按返回键只是盲退，直接交给恢复导航重开活动
+            raise TaskUnavailable('读屏不可用，无法确认是否回到任务列表')
         # 跳转到其它 App 时（package 不是闲鱼），返回键只会退那个 App 直到桌面，
         # 回不到闲鱼；直接恢复（启动闲鱼 + 导航回任务列表），不傻按返回键。
         if not (screen.package or '').startswith('com.taobao.idlefish'):
@@ -476,25 +573,37 @@ class IdleFishCoinsActivity(EntryPolicy, Activity):
             except Exception as exc:
                 logger.warning('跨 App 返回闲鱼失败：%s', exc)
                 return screen
-        for _ in range(tries):
+        # 视频/广告页：把连弹的退出确认一次点干净，再判断是否已经回到列表
+        if self._is_ad_or_video_page(screen):
+            screen = self._dismiss_exit_dialogs(screen)
+            if self._at_task_list(screen):
+                return screen
+        back_tries = max(1, int(self.config.get('return_back_tries', 1)))
+        settle = float(self.config.get('return_settle_seconds', 1.5))
+        for _ in range(back_tries):
             if self._at_task_list(screen):
                 return screen
             if self._is_game_container(screen):
                 self._exit_game()
                 screen = self.read()
                 continue
-            # 仍在视频/广告全屏页（H5 嵌套，需多次返回才退得出来）：持续返回，
-            # 不触发下面的落地页 break，否则会停在视频页被框架判导航失败、重启闲鱼
             if self._is_ad_or_video_page(screen):
-                self.device.go_back()
-                self.control.wait(0.8)
-                screen = self.read()
-                continue
+                screen = self._dismiss_exit_dialogs(screen)
+                if self._at_task_list(screen):
+                    return screen
             # 已退到金币落地页（不在任务面板）：再退就越退越远，直接重开面板
             if self.activity_landing(screen):
                 break
-            self.device.go_back()
-            self.control.wait(0.8)
+            # 页面内「返回」按钮优先，找不到才按系统返回键；两者只做一次，
+            # 避免一次点按钮 + 一次返回键把页面退过头。
+            label = str(self.config.get('browse_reward_button', '返回'))
+            back = self._find(screen, re.escape(label), exact=True)
+            if back is not None:
+                logger.info('点击页面内「%s」返回任务列表', label)
+                self.click(back)
+            else:
+                self.device.go_back()
+            self.control.wait(settle)
             screen = self.read()
         if not self._at_task_list(screen):
             try:
@@ -533,36 +642,44 @@ class IdleFishCoinsActivity(EntryPolicy, Activity):
                           int(width * .5), int(height * .46), duration=0.5)
 
     def _video_browse(self, seconds):
-        """视频页不用滑动，但要一直观察到时间到或出现完成提示。"""
+        """视频页不用滑动，但要一直观察到时间到或出现完成提示。
+
+        刚点完「去完成」时 H5 还没跳转，第一屏读到的往往仍是任务列表；
+        只在「离开过列表又回来」或「等满时长」时才结束，否则视频一秒没播
+        就被当成看完，任务白做一次失败。
+        """
         desired = int(seconds or self.config['browse']['video_seconds'])
         total = desired + int(self.config.get('browse_extra_seconds', 5))
         self.update(message='浏览视频 %d 秒' % total)
         deadline = self.control.now() + total
         screen = self.read()
         explicit = False
+        entered = False
         while True:
             if screen.find(DONE_PROMPT_RE):
                 explicit = True
                 logger.info('检测到视频完成提示，提前结束浏览')
                 break
             if self.is_task_list(screen.nodes):
-                break
+                if entered:
+                    # 已经离开过列表又回到列表：视频页结束
+                    break
+                if self.control.now() >= deadline:
+                    logger.info('视频页 %.0f 秒内未打开，按超时结束', total)
+                    break
+                logger.info('视频页尚未打开，继续等待')
+                self.control.wait(1)
+                screen = self._safe_read(screen, force_ocr=bool(self.config['ocr']))
+                continue
+            entered = True
             remaining = deadline - self.control.now()
             if remaining <= 0:
                 break
             self.control.wait(min(2, max(.2, remaining)))
-            screen = self.read(force_ocr=bool(self.config['ocr']))
-        for _ in range(3):
-            skip = self._find(screen, '|'.join(self.config['video_skip_words']))
-            if skip is None:
-                break
-            self.click(skip)
-            self.control.wait(1.5)
-            screen = self.read(force_ocr=bool(self.config['ocr']))
-        leave = self._find(screen, '|'.join(self.config['video_exit_words']))
-        if leave is not None:
-            self.click(leave)
-            self.control.wait(2)
+            screen = self._safe_read(screen, force_ocr=bool(self.config['ocr']))
+        # 退出确认可能连弹两次，「跳过」与「坚持退出/残忍离开/离开」合并成一组
+        # 反复点，直到不再出现为止；原先 leave 只点一次，第二次弹窗无人处理。
+        screen = self._dismiss_exit_dialogs(screen)
         return screen, explicit
 
     # 真正的商品卡片都标「抵后价」（闲鱼币抵扣后实付价），用它锁定商品；
@@ -693,9 +810,13 @@ class IdleFishCoinsActivity(EntryPolicy, Activity):
     def _search_task(self, screen):
         """搜索类任务（如「搜一搜推荐商品」）。
 
-        点「去完成」进入搜索页后，还需在搜索框输入/点推荐词再浏览才能完成。
-        这里尽力而为：点开搜索框 → 点搜索发现词云里的第一个推荐词触发搜索
-        → 连续滑动浏览若干次 → 返回。无法确认推荐词入口时跳过，不在未搜索的页面滑动。
+        点「去完成」进入搜索页后，光点推荐词是过不去的：闲鱼按「真的搜了商品
+        并浏览」计数，实测连续点「淘宝精选」十几次，进度始终 0/1。这里改成和
+        人工一致的做法：点开搜索框 → 输入关键词 → 提交搜索 → 滑动浏览结果。
+
+        关键词取活动配置 task_search_keyword，留空时从公共词表
+        task_search_keywords 随机抽一个。输入不可用时退回点推荐词，
+        两者都确认不了就跳过，不在未搜索的页面上滑动。
         """
         s = self.read()
         submitted = False
@@ -704,28 +825,70 @@ class IdleFishCoinsActivity(EntryPolicy, Activity):
             self.click(box)
             self.control.wait(0.8)
             s = self.read()
-            # 搜索页「搜索发现 / 热门搜索」词云，点第一个具体推荐词触发搜索。
-            # 排除词云标题本身（搜索发现 / 猜你想搜 / 历史搜索）和按钮文本。
-            recs = [n for n in s.nodes
-                    if 2 <= len(normalize(n.text)) <= 10
-                    and normalize(n.text) not in ('搜索发现', '热门搜索', '猜你想搜',
-                                                  '历史搜索', '清空')
-                    and screen.height * 0.25 < n.center[1] < screen.height * 0.72
-                    and not re.fullmatch(ACTION_RE, normalize(n.text))]
-            if recs and self._find(s, r'搜索发现|热门搜索|猜你想搜|历史搜索'):
-                self.click(recs[0])
-                submitted = True
-                self.control.wait(1.2)
-                logger.info('搜索任务：点推荐词「%s」', normalize(recs[0].text))
+            submitted = self._input_search(s) or self._tap_suggestion(s)
         if not submitted:
-            raise TaskUnavailable('未确认搜索推荐词入口，跳过当前搜索任务')
+            raise TaskUnavailable('未确认搜索入口，跳过当前搜索任务')
         # 浏览搜索结果：连续滑动若干次
         swipes = int(self.config.get('search_browse_swipes', 6))
         for _ in range(swipes):
             self._swipe_once(s)
             self.control.wait(0.4)
-            s = self.read()
+            s = self._safe_read(s)
         return s, bool(s.find(DONE_PROMPT_RE))
+
+    def _search_keyword(self):
+        """搜索任务用的关键词：活动配置优先，其次公共词表随机抽取。"""
+        configured = normalize(str(self.config.get('task_search_keyword') or ''))
+        if configured:
+            return configured
+        pool = [normalize(str(w)) for w in (self.config.get('task_search_keywords') or [])]
+        pool = [w for w in pool if w]
+        return random.choice(pool) if pool else ''
+
+    def _input_search(self, screen):
+        """在搜索页输入关键词并提交搜索；输入不可用返回 False。"""
+        keyword = self._search_keyword()
+        if not keyword:
+            return False
+        try:
+            self.device.input_text(keyword)
+        except Exception as exc:
+            logger.warning('搜索任务：输入关键词失败（%s），改用推荐词', exc)
+            return False
+        self.update(message='搜索：' + keyword)
+        self.control.wait(1.2)
+        later = self._safe_read(screen)
+        submit = None
+        if later is not None:
+            submit = next((n for n in later.nodes
+                           if normalize(n.text) == '搜索'
+                           and n.center[1] < later.height * 0.2
+                           and n.center[0] > later.width * 0.6), None)
+        if submit is not None:
+            self.click(submit)
+        else:
+            self.device.press('enter')
+        self.control.wait(1.5)
+        logger.info('搜索任务：输入关键词「%s」并提交搜索', keyword)
+        return True
+
+    def _tap_suggestion(self, screen):
+        """输入不可用时，点搜索发现词云里的第一个推荐词。"""
+        if not self._find(screen, r'搜索发现|热门搜索|猜你想搜|历史搜索'):
+            return False
+        # 排除词云标题本身（搜索发现 / 猜你想搜 / 历史搜索）和按钮文本。
+        recs = [n for n in screen.nodes
+                if 2 <= len(normalize(n.text)) <= 10
+                and normalize(n.text) not in ('搜索发现', '热门搜索', '猜你想搜',
+                                              '历史搜索', '清空')
+                and screen.height * 0.25 < n.center[1] < screen.height * 0.72
+                and not re.fullmatch(ACTION_RE, normalize(n.text))]
+        if not recs:
+            return False
+        self.click(recs[0])
+        self.control.wait(1.2)
+        logger.info('搜索任务：点推荐词「%s」', normalize(recs[0].text))
+        return True
 
     def _browse(self, seconds):
         """浏览页：必须不间断滑动满 N 秒才计时。
@@ -733,18 +896,23 @@ class IdleFishCoinsActivity(EntryPolicy, Activity):
         闲鱼浏览任务按「页面持续滑动」计时，任何停顿（读屏、二次检测）都会让
         计时不连续、从而被判定为未完成。因此滑动期间**完全不读屏**，只靠时长
         覆盖；滑够时长后再读一次确认是否出现完成提示，必要时补滑一段。
+
+        每次手势之间留 browse_swipe_interval（默认 0.2 秒）：手势过密会让商品
+        瀑布流在十几秒内加载几十屏，控件树膨胀后读屏直接抛 StackOverflowError。
+        收尾读屏失败时沿用最后一次成功的屏幕，按「没有完成提示」继续返回列表。
         """
         screen = self.read()
         desired = self._browse_seconds(screen, seconds)
         total = desired + int(self.config.get('browse_extra_seconds', 5))
         logger.info('浏览任务：页面要求 %d 秒，连续滑动 %d 秒', desired, total)
+        interval = max(0.02, float(self.config.get('browse_swipe_interval', 0.2)))
         deadline = self.control.now() + total
         while self.control.now() < deadline:
             self._swipe_once(screen)
-            # 极小衔接间隔，避免手势命令堆积；不读屏，保证不间断
-            self.control.wait(0.02)
+            # 手势之间只留短衔接间隔；不读屏，保证计时连续
+            self.control.wait(interval)
         # 滑动结束后再读屏确认完成状态
-        screen = self.read()
+        screen = self._safe_read(screen)
         explicit = bool(screen.find(DONE_PROMPT_RE))
         if not explicit:
             countdown = self._countdown(screen)
@@ -754,8 +922,8 @@ class IdleFishCoinsActivity(EntryPolicy, Activity):
                 end = self.control.now() + countdown + 1
                 while self.control.now() < end:
                     self._swipe_once(screen)
-                    self.control.wait(0.02)
-                screen = self.read()
+                    self.control.wait(interval)
+                screen = self._safe_read(screen)
                 explicit = bool(screen.find(DONE_PROMPT_RE))
         return screen, explicit
 

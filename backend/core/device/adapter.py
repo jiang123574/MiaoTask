@@ -16,7 +16,7 @@ import threading
 import time
 from pathlib import Path
 import xml.etree.ElementTree as ET
-from backend.core.device.instances import AppInstance, InstanceMismatch, discover_android_instances, parse_foreground
+from backend.core.device.instances import AppInstance, InstanceMismatch, discover_android_instances, parse_foreground, ObservationUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -369,6 +369,11 @@ class DeviceAdapter:
         if self.device_type == 'hmdriver2':
             package, activity = self._device.current_app()
             info = {'package': package or '', 'activity': activity or ''}
+        elif getattr(self, '_bounded_capture', False) and not getattr(self, '_display_id', 0):
+            # Input and capture use the same fresh, bounded focus recovery. A
+            # single stalled summary must not exhaust all later fallbacks.
+            info, evidence = self._capture_focus(getattr(self, '_operation_io', None))
+            self._window_dump = evidence
         else:
             fallback = [None]
             def reliable_read(args):
@@ -488,13 +493,21 @@ class DeviceAdapter:
         """
         from backend.core.device.read_shell import AdbReadShell
         from backend.core.device.displays import focused_display
+        from backend.core.device.instances import focused_notification
+        started = time.monotonic()
         read = AdbReadShell(self.serial, prefer_socket=getattr(self, '_bounded_capture', False),
-                            timeout=2, budget=5, transport=transport)
-        deadline = time.monotonic() + 5
+                            timeout=4, budget=8, transport=transport)
+        deadline = time.monotonic() + 8
         control = getattr(self, '_run_control', None)
         reason = '前台焦点暂缺'
         observations = []
-        for round_no in range(3):
+        reconnect_checked = False
+        notification_seen = False
+        for round_no in range(32):
+            if time.monotonic() >= deadline:
+                break
+            if round_no >= 3 and not notification_seen and reason != '前台焦点暂缺':
+                break
             if control is not None:
                 control.check()
             for command in ('displays', 'windows'):
@@ -507,6 +520,12 @@ class DeviceAdapter:
                         control.check()
                     reason = '窗口元数据读取超时或断流'
                     observations.append(dict(query=command, error=type(exc).__name__))
+                    if not reconnect_checked:
+                        reconnect_checked = True
+                        from backend.core.device.read_shell import reconnect_offline_wireless
+                        restored = reconnect_offline_wireless(self.serial, max(0, deadline-time.monotonic()), transport)
+                        if restored:
+                            logger.info('无线调试通道已重连，重新核定当前窗口')
                     continue
                 if (result.exit_code != 0 or not isinstance(result.output, str)
                         or not result.output.strip() or re.search(
@@ -515,6 +534,18 @@ class DeviceAdapter:
                     observations.append(dict(query=command, error='invalid-result'))
                     continue
                 display = focused_display(result.output)
+                if focused_notification(result.output):
+                    if display != 0:
+                        raise InstanceMismatch('通知焦点位于另一显示屏，已停止输入')
+                    if not notification_seen:
+                        notification_seen = True
+                        deadline = started + 20
+                        read = AdbReadShell(self.serial, prefer_socket=getattr(self, '_bounded_capture', False),
+                                            timeout=4, budget=max(.01, deadline-time.monotonic()), transport=transport)
+                        logger.info('通知临时占用窗口，等待消退后继续；不会打开消息')
+                    reason = '通知窗口尚未消退'
+                    observations.append(dict(query=command, transient='notification'))
+                    break
                 info = parse_foreground(result.output)
                 observations.append(dict(query=command, display=display, focus_found=bool(info)))
                 if display != 0:
@@ -527,8 +558,8 @@ class DeviceAdapter:
                     if round_no or command != 'displays':
                         logger.debug('截图前台焦点已重新核定（第%d轮，%s）', round_no + 1, command)
                     return info, result.output
-            if round_no < 2 and time.monotonic() < deadline:
-                delay = min(.15 * (round_no + 1), max(0, deadline - time.monotonic()))
+            if time.monotonic() < deadline and (round_no < 2 or notification_seen or reason == '前台焦点暂缺'):
+                delay = min(.5 if notification_seen or round_no >= 2 else .15 * (round_no + 1), max(0, deadline - time.monotonic()))
                 if control is not None:
                     control.wait(delay)
                 elif transport is not None:
@@ -537,8 +568,10 @@ class DeviceAdapter:
                     transport.check()
                 else:
                     time.sleep(delay)
-        error = InstanceMismatch('截图采集未能核定主显示屏及前台身份，已停止操作'
-                                 f'（{reason}；已在5秒总预算内尝试复读，未执行输入）')
+        budget = 20 if notification_seen else 8
+        error = ObservationUnavailable('暂未取得主显示屏及前台身份，正在准备恢复应用'
+                                 f'（{reason}；已在{budget}秒总预算内尝试复读，未执行输入）')
+        error.notification = notification_seen
         error.capture_diagnostics = observations
         raise error
 
@@ -553,29 +586,68 @@ class DeviceAdapter:
         from PIL import Image
         info, window_dump = self._capture_focus(transport)
         if compressed:
-            raw = self._capture_jpeg(quality, transport=transport) if transport else self._capture_jpeg(quality)
+            try:
+                raw = self._capture_jpeg(quality, transport=transport) if transport else self._capture_jpeg(quality)
+            except (OSError, TimeoutError):
+                # A stalled Wi-Fi image stream is not a navigation failure.
+                # Retry only the read, once, with freshly checked identity.
+                if transport is not None:
+                    transport.check()
+                info, window_dump = self._capture_focus(transport)
+                raw = self._capture_jpeg(quality, transport=transport) if transport else self._capture_jpeg(quality)
+            image = Image.open(io.BytesIO(raw)).convert('RGB')
         else:
-            from backend.core.device.discovery import resolve_adb_binary
-            from backend.core.device.displays import capture_display
-            from backend.core.device.read_shell import AdbReadShell
-            import subprocess
-            # screencap's implicit display can emit a warning into the PNG
-            # stream and is not guaranteed to be the logical primary display.
-            displays = AdbReadShell(self.serial, prefer_socket=True, timeout=2, budget=2,
-                                   transport=transport)(['dumpsys', 'display'])
-            if displays.exit_code != 0:
-                raise RuntimeError('无法读取主显示屏映射，已停止截图')
-            capture_id = capture_display(displays.output, 0)
-            command = [resolve_adb_binary(), '-s', self.serial, 'exec-out', 'screencap', '-p', '-d', capture_id]
-            result = (transport.run(command, 8) if transport else subprocess.run(command,
-                                    capture_output=True, timeout=8,
-                                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)))
-            if result.returncode:
-                raise RuntimeError('设备截图失败')
-            raw = result.stdout
-        image = Image.open(io.BytesIO(raw)).convert('RGB')
+            image, refreshed = self._primary_png_image(window_dump, transport)
+            if refreshed is not None:
+                info, window_dump = refreshed
         info['window_dump'] = window_dump
         return info, image
+
+    def _primary_png_image(self, window_dump, transport=None):
+        """Use the original primary screencap path, then ROM-specific fallbacks."""
+        from PIL import Image
+        from backend.core.device.discovery import resolve_adb_binary
+        from backend.core.device.displays import capture_display, AmbiguousDisplayMapping
+        from backend.core.device.read_shell import AdbReadShell
+
+        base = [resolve_adb_binary(), '-s', self.serial, 'exec-out', 'screencap', '-p']
+
+        def capture(command):
+            result = (transport.run(command, 8) if transport else subprocess.run(
+                command, capture_output=True, timeout=8,
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)))
+            if result.returncode:
+                raise OSError('设备PNG截图失败')
+            return Image.open(io.BytesIO(result.stdout)).convert('RGB')
+
+        # A working ordinary phone must not depend on dumpsys display grammar.
+        # A known multi-display environment still needs an explicit mapping.
+        multiple = any(int(value) != 0 for value in re.findall(r'mDisplayId\s*=\s*(\d+)', window_dump))
+        try:
+            image = capture(base)
+            if not multiple:
+                return image, None
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            pass
+        logger.debug('常规主屏截图未采用，尝试显式物理屏映射')
+        try:
+            result = AdbReadShell(self.serial, prefer_socket=True, timeout=2, budget=2,
+                                  transport=transport)(['dumpsys', 'display'])
+            if result.exit_code:
+                raise OSError('显示屏元数据暂不可用')
+            capture_id = capture_display(result.output, 0)
+            return capture(base + ['-d', capture_id]), None
+        except AmbiguousDisplayMapping:
+            raise
+        except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
+            # UIAutomation's takeScreenshot targets logical display 0. It does
+            # not need a SurfaceFlinger physical ID or ROM display dump parser.
+            if transport is not None:
+                transport.check()
+            refreshed = self._capture_focus(transport)
+            logger.debug('物理屏映射截图不可用，尝试主屏UIAutomation截图')
+            raw = self._capture_jpeg(95, transport=transport) if transport else self._capture_jpeg(95)
+            return Image.open(io.BytesIO(raw)).convert('RGB'), refreshed
 
     def _capture_jpeg(self, quality=70, transport=None):
         """Read-only screenshot RPC on its own socket; never restart the server."""
@@ -598,7 +670,7 @@ class DeviceAdapter:
         port = getattr(self._device, '_device_server_port', 9008)
         with AdbHTTPConnection(remote, port=port) as connection:
             connection.connect()
-            connection.sock.settimeout(5)
+            connection.sock.settimeout(8)
             active_socket = connection.sock
             def abort():
                 try:
@@ -645,6 +717,12 @@ class DeviceAdapter:
             except Exception:
                 continue
         return None
+
+    @serialized
+    def dismiss_notification_panel(self):
+        """Collapse a known notification shade without opening its contents."""
+        if self.device_type == 'uiautomator2':
+            self._checked_shell(['cmd', 'statusbar', 'collapse'], timeout=2)
 
     @serialized
     def resume_app(self, package_name):
@@ -700,12 +778,17 @@ class DeviceAdapter:
         # A cold-started task can finish its old activity and expose the previous
         # app again. Reactivate the SAME selected instance once, without another
         # force-stop or any input into an unconfirmed account.
+        last_focus_error = None
         for attempt in range(2):
             self._checked_shell(start)
-            deadline = time.monotonic() + 5
+            deadline = time.monotonic() + 8
             while time.monotonic() < deadline:
                 try:
                     info = self.current_app()
+                    last_focus_error = None
+                except ObservationUnavailable as exc:
+                    last_focus_error = exc
+                    info = {}
                 except Exception:
                     logger.debug('启动转场中暂未取得前台实例', exc_info=True)
                     info = {}
@@ -715,6 +798,8 @@ class DeviceAdapter:
             if attempt == 0:
                 self._screenshot_cache = None
                 logger.info('启动后未确认所选所选应用前台，重新唤起同一实例后核对')
+        if last_focus_error is not None:
+            raise last_focus_error
         raise InstanceMismatch('未确认所选所选应用实例已进入前台，已停止，未改用其他所选应用')
 
     @serialized

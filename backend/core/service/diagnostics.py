@@ -11,7 +11,7 @@ from backend.core.runtime import assets_dir, version
 from backend.core.device.discovery import resolve_adb_binary
 
 # onnxruntime-gpu 提供同名 onnxruntime 模块，但发行包元数据名不同。
-_DISTRIBUTION_ALIASES = {'onnxruntime': ('onnxruntime', 'onnxruntime-gpu')}
+_DISTRIBUTION_ALIASES = {'onnxruntime': ('onnxruntime', 'onnxruntime-gpu', 'onnxruntime-directml')}
 
 
 def _distribution_version(name):
